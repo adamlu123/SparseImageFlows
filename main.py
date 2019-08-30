@@ -4,13 +4,17 @@ import os
 import torch
 from torch.autograd import Variable
 from torch import optim
+from torch.distributions import Normal
+
 # from mag.experiment import Experiment
 
 from visualizations import plot_density, scatter_points
-from utils import random_normal_samples
 from flow import NormalizingFlow
 from losses import FreeEnergyBound
 from densities import p_z
+
+from load_data import load_data
+
 
 
 parser = argparse.ArgumentParser(
@@ -84,7 +88,7 @@ def main():
 
         scheduler.step()
 
-        samples = Variable(random_normal_samples(config['batch_size']))
+        samples = Normal(loc=0, scale=1).sample([config['batch_size'], 2])
         zk, log_jacobians = flow(samples)
 
         optimizer.zero_grad()
@@ -96,7 +100,7 @@ def main():
             print("Loss on iteration {}: {}".format(iteration , loss.tolist()))
 
         if is_plot(iteration):
-            samples = Variable(random_normal_samples(args.plot_points))
+            samples = Normal(loc=0, scale=1).sample([args.plot_points, 2]) #Variable(random_normal_samples(args.plot_points))
             zk, det_grads = flow(samples)
             scatter_points(
                 zk.data.numpy(),
@@ -107,4 +111,6 @@ def main():
 
 
 if __name__ == "__main__":
+    x_32, _, _ = load_data(name='low', dataset='train')
+    print(x_32.shape)
     main()

@@ -5,7 +5,6 @@ import torch
 from torch.autograd import Variable
 from matplotlib import pyplot as plt
 
-
 def scatter_points(points, directory, iteration, flow_length):
 
     X_LIMS = (-7, 7)

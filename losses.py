@@ -15,3 +15,8 @@ class FreeEnergyBound(nn.Module):
 
         sum_of_log_jacobians = sum(log_jacobians)
         return (-sum_of_log_jacobians - safe_log(self.density(zk))).mean()
+
+
+
+
+# def get_z_loglike(zk)
