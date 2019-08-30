@@ -56,6 +56,7 @@ if not os.path.isdir(args.result_dir):
     # config = experiment.config
     # experiment.register_directory("samples")
     # experiment.register_directory("distributions")
+
 config = {
     "batch_size": 40,
     "iterations": 10000,
@@ -72,10 +73,10 @@ scheduler = optim.lr_scheduler.ExponentialLR(optimizer, config['lr_decay'])
 
 plot_density(p_z, directory=args.result_dir)
 
-def should_log(iteration):
+def is_log(iteration):
     return iteration % args.log_interval == 0
 
-def should_plot(iteration):
+def is_plot(iteration):
     return iteration % args.plot_interval == 0
 
 def main():
