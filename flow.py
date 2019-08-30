@@ -76,7 +76,23 @@ class PlanarFlowLogDetJacobian(nn.Module):
         return safe_log(det_grad.abs())
 
 
-class plain_generator(nn.Module):
-    def __init__(self, dim):
+class PlainGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
         super().__init__()
-        self.linear = 
+        self.linear1 = nn.Linear(base_dim, 32)
+        self.linear2 = nn.Linear(32, 64)
+        self.linear3 = nn.Linear(64, 128)
+        self.linear_pi = nn.Linear(128, img_dim)
+        self.linear_beta = nn.Linear(128, img_dim)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.linear2(x)
+        x = self.linear3(x)
+        pi = self.linear_pi(x)
+        beta = self.linear_beta(x)
+        return pi, beta
+
+
+
+
