@@ -13,7 +13,11 @@ from flow import NormalizingFlow
 from losses import FreeEnergyBound
 from densities import p_z
 
-from load_data import load_data
+import numpy as np
+import sys
+PATH = '/home/baldig-projects/julian/sisr/muon'
+sys.path.append(PATH)
+from data_loader import load_data
 
 
 

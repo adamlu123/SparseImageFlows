@@ -13,7 +13,7 @@ def load_batch_x(x, batchsize=256, start=0, stop=None):
     iexample = 0
     while True:
         batch = slice(iexample, iexample + batchsize)
-        batch_x = [batch, :]
+        batch_x = x[batch, :]
         yield batch_x
         iexample += batchsize
         if iexample + batchsize >= x.shape[0]:

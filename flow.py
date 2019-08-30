@@ -74,3 +74,9 @@ class PlanarFlowLogDetJacobian(nn.Module):
         psi = (1 - self.tanh(activation) ** 2) * self.weight
         det_grad = 1 + torch.mm(psi, self.scale.t())
         return safe_log(det_grad.abs())
+
+
+class plain_generator(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.linear = 
