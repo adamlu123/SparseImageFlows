@@ -92,10 +92,10 @@ def main():
         loss.backward()
         optimizer.step()
 
-        if should_log(iteration):
+        if is_log(iteration):
             print("Loss on iteration {}: {}".format(iteration , loss.tolist()))
 
-        if should_plot(iteration):
+        if is_plot(iteration):
             samples = Variable(random_normal_samples(args.plot_points))
             zk, det_grads = flow(samples)
             scatter_points(
