@@ -1,4 +1,5 @@
 import torch
+from torch.distributions import Normal, Bernoulli
 
 
 def safe_log(z):
@@ -18,3 +19,9 @@ def load_batch_x(x, batchsize=256, start=0, stop=None):
         iexample += batchsize
         if iexample + batchsize >= x.shape[0]:
             iexample = 0
+
+
+def get_img_sample(pi, beta):
+    binaries = Bernoulli(pi).samples()
+    betas = Normal(loc=beta, scale=1).sample()
+    return binaries * betas

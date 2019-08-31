@@ -30,5 +30,3 @@ class SparseCE(nn.Module):
         cross_entropy = (z * torch.log(pi) + (1 - z) * torch.log(1 - pi) + ce_beta).sum()
         return -cross_entropy
 
-
-# def get_z_loglike(zk)
