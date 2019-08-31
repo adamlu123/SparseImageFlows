@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 from utils import safe_log
-
+import numpy as np
 
 class FreeEnergyBound(nn.Module):
 
@@ -19,14 +19,14 @@ class FreeEnergyBound(nn.Module):
 
 class SparseCE(nn.Module):
     def __init__(self):
-        super().__init__()
+         super().__init__()
 
     def forward(self, pi, beta, x):
-        zero = torch.zeros_like(x)
-        one = torch.ones_like(x)
+        zero = torch.zeros_like(x).cuda()
+        one = torch.ones_like(x).cuda()
         z = torch.where(x < 1e-4, zero, one)
-        ce_beta = torch.log(1 / torch.sqrt(2 * torch.pi) - torch.square(beta - x) / 2)
+        ce_beta = torch.log(1 / np.sqrt(2 * np.pi) - (beta - x)**2 / 2)
         ce_beta = torch.where(z > 0, ce_beta, zero)
-        cross_entropy = (z * torch.log(pi) + (1 - z) * torch.log(1 - pi) + ce_beta).sum()
+        cross_entropy = (z * np.log(np.pi) + (1 - z) * np.log(1 - np.pi) + ce_beta).sum()
         return -cross_entropy
 

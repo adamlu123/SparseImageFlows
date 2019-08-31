@@ -5,8 +5,7 @@ import torch
 from torch.autograd import Variable
 from torch import optim
 from torch.distributions import Normal
-
-# from mag.experiment import Experiment
+import torch.utils.data
 
 from visualizations import plot_density, scatter_points
 from flow import NormalizingFlow, PlainGenerator
@@ -32,23 +31,24 @@ def is_plot(iteration):
 def train(args, config, model, train_loader, optimizer, epoch, device, scheduler):
     model.train()
 
-    for iteration, (data, target) in enumerate(train_loader):
+    for iteration, data in enumerate(train_loader):
         data = data.to(device)
+        data = data.view(config['batch_size'],-1)
         optimizer.zero_grad()
 
-        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'], 32])
+        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'], 32]).cuda()
         pi, beta = model(noisesamples)
 
-        loss = SparseCE(pi, beta, data)
+        loss = SparseCE()(pi, beta, data)
         loss.backward()
         optimizer.step()
 
-        if is_log(iteration):
+        if iteration % args.log_interval == 0:
             print("Loss on iteration {}: {}".format(iteration , loss.tolist()))
 
-        if is_plot(iteration):
+        if iteration % args.log_interval == 0:
             noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'], 32]) #Variable(random_normal_samples(args.plot_points))
-            pi, beta = PlainGenerator(noisesamples)
+            pi, beta = PlainGenerator(base_dim=32, img_dim=32*32)(noisesamples)
             img = utils.get_img_sample(pi, beta)
 
             scatter_points(
@@ -90,19 +90,22 @@ def main():
         os.mkdir(args.result_dir)
 
     config = {
-        "batch_size": 40,
+        "batch_size": 128,
         "epochs": 100,
-        "initial_lr": 0.01,
+        "initial_lr": 0.001,
         "lr_decay": 0.999,
         "flow_length": 16,
         "name": "planar"
     }
 
-    flow = NormalizingFlow(dim=2, flow_length=config['flow_length'])
-    bound = FreeEnergyBound(density=p_z)
+    # flow = NormalizingFlow(dim=2, flow_length=config['flow_length'])
+    # bound = FreeEnergyBound(density=p_z)
+    x_32, _, _ = load_data(name='low', dataset='train')  # [x, y, w]
 
-    model = PlainGenerator(base_dim=32, img_dim=32)
-    optimizer = optim.RMSprop(flow.parameters(), lr=config['initial_lr'])
+    train_loader = torch.utils.data.DataLoader(x_32, batch_size=config['batch_size'], num_workers=2)
+    model = PlainGenerator(base_dim=32, img_dim=32*32).to(device)
+
+    optimizer = optim.RMSprop(model.parameters(), lr=config['initial_lr'])
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, config['lr_decay'])
 
     plot_density(p_z, directory=args.result_dir)
@@ -115,7 +118,4 @@ def main():
 
 
 if __name__ == "__main__":
-    x_32, _, _ = load_data(name='low', dataset='train') #[x, y, w]
-    print(x_32.shape)
-    train(x)
-    # main()
+    main()
