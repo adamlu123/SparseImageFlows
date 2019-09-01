@@ -1,5 +1,6 @@
 import argparse
 import os
+import pickle as pkl
 
 import torch
 from torch.autograd import Variable
@@ -17,7 +18,7 @@ import numpy as np
 import sys
 PATH = '/home/baldig-projects/julian/sisr/muon'
 sys.path.append(PATH)
-from data_loader import load_data
+from utils import load_data
 
 
 
@@ -33,7 +34,7 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
     model.train()
 
     for iteration, data in enumerate(train_loader):
-        data = data.to(device)
+        data = data.type(torch.cuda.FloatTensor)#.to(device)
         data = data.view(config['batch_size'], -1)
         optimizer.zero_grad()
 
@@ -53,18 +54,31 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
 
 def test(args, config, model, epoch):
     model.eval()
-    noisesamples = Normal(loc=0, scale=1).sample([1, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
+    numsamples = 100
+    noisesamples = Normal(loc=0, scale=1).sample([numsamples, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
     pi, beta = model(noisesamples)
     img = utils.get_img_sample(pi, beta)
 
     density_plots(
-        img.tolist(),
-        directory=args.result_dir,
-        epoch=epoch,
-        flow_length=config['flow_length']
-    )
+                img.tolist(),
+                directory=args.result_dir,
+                epoch=epoch,
+                flow_length=config['flow_length'],
+                config=config)
 
-    with
+    # with open(args.result_dir + '/pi.txt', 'a') as f:
+    #     f.write('\n epoch:{} \n'.format(epoch))
+    #     f.write(str(pi.view(32,32).cpu().data.numpy()))
+    # with open(args.result_dir + '/img_samples.txt', 'a') as f:
+    #     f.write('\n epoch:{} \n'.format(epoch))
+    #     f.write(str(img[0]))
+    save_values = True
+    if save_values:
+        with open(args.result_dir + '/img_samples_{}.pkl'.format(epoch), 'wb') as f:
+            pkl.dump(img[0].tolist(), f)
+        with open(args.result_dir + '/pi_{}.pkl'.format(epoch), 'wb') as f:
+            pkl.dump(pi.view(numsamples,32,32).cpu().data.numpy(), f)
+
 
 
 
@@ -87,27 +101,32 @@ def main():
     )
 
     parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/exp_test',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/exp_test/signal',
         help="How many to points to generate for one plot."
     )
 
     args = parser.parse_args()
     device = torch.device("cuda")
     torch.manual_seed(42)
-
-    if not os.path.isdir(args.result_dir):
-        os.mkdir(args.result_dir)
-
     config = {
         "batch_size": 128,
         "epochs": 100,
-        "initial_lr": 0.001,
+        "initial_lr": 0.01,
         "lr_decay": 0.999,
         "flow_length": 16,
-        "name": "planar"
+        "name": "planar",
+        "subset": "signal"
     }
 
-    x_32, _, _ = load_data(name='low', dataset='train')  # [x, y, w]
+    if not os.path.isdir(args.result_dir):
+        os.mkdir(args.result_dir)
+    # subset_dir = args.result_dir + '/' + config['subset']
+    # if not os.path.isdir(subset_dir):
+    #     os.mkdir(subset_dir)
+
+
+
+    x_32, _, _ = load_data(config['subset'], dataset='train')  # [x, y, w]
     print('data_shape', x_32.shape)
 
     train_loader = torch.utils.data.DataLoader(x_32, batch_size=config['batch_size'], num_workers=2, drop_last=True)

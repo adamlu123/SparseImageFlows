@@ -5,17 +5,18 @@ import torch
 from torch.autograd import Variable
 from matplotlib import pyplot as plt
 
-def density_plots(img, directory, epoch, flow_length):
+def density_plots(img, directory, epoch, flow_length, config):
     fig = plt.figure(figsize=(7, 7))
     ax = fig.add_subplot(111)
     ax.imshow(img[0])
-    ax.set_title(
-        "Flow length: {}\n Samples on epoch #{}"
-        .format(flow_length, epoch)
-    )
+    ax.set_title("Flow length: {}\n Samples on epoch #{}".format(flow_length, epoch))
 
-    fig.savefig(os.path.join(directory, "PlainGenerator_result_{}.png".format(epoch)))
+    fig.savefig(os.path.join(directory, "PlainGenerator_{}_{}.png".format(config['subset'], epoch)))
     plt.close()
+
+    mean_img = np.mean(img, axis=0)
+    plt.imshow(mean_img)
+    plt.savefig(os.path.join(directory, "PlainGenerator_mean_{}_{}.png".format(config['subset'], epoch)))
 
 
 def plot_density(density, directory):

@@ -91,7 +91,7 @@ class PlainGenerator(nn.Module):
         x = self.sigmoid(self.linear2(x))
         x = self.linear3(x)
         pi = torch.sigmoid(self.linear_pi(x))
-        beta = self.linear_beta(x)
+        beta = torch.relu(self.linear_beta(x))
         return pi, beta
 
 
