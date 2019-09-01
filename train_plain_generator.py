@@ -7,7 +7,7 @@ from torch import optim
 from torch.distributions import Normal
 import torch.utils.data
 
-from visualizations import plot_density, scatter_points
+from visualizations import plot_density, density_plots
 from flow import NormalizingFlow, PlainGenerator
 from losses import FreeEnergyBound, SparseCE
 from densities import p_z
@@ -29,11 +29,12 @@ def is_plot(iteration):
 
 
 def train(args, config, model, train_loader, optimizer, epoch, device, scheduler):
+    print('Epoch: {}'.format(epoch))
     model.train()
 
     for iteration, data in enumerate(train_loader):
         data = data.to(device)
-        data = data.view(config['batch_size'],-1)
+        data = data.view(config['batch_size'], -1)
         optimizer.zero_grad()
 
         noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'], 32]).cuda()
@@ -46,18 +47,26 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
         if iteration % args.log_interval == 0:
             print("Loss on iteration {}: {}".format(iteration , loss.tolist()))
 
-        if iteration % args.log_interval == 0:
-            noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'], 32]) #Variable(random_normal_samples(args.plot_points))
-            pi, beta = PlainGenerator(base_dim=32, img_dim=32*32)(noisesamples)
-            img = utils.get_img_sample(pi, beta)
-
-            scatter_points(
-                img.data.numpy(),
-                directory=args.result_dir,
-                iteration=iteration,
-                flow_length=config['flow_length']
-            )
     scheduler.step()
+
+
+
+def test(args, config, model, epoch):
+    model.eval()
+    noisesamples = Normal(loc=0, scale=1).sample([1, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
+    pi, beta = model(noisesamples)
+    img = utils.get_img_sample(pi, beta)
+
+    density_plots(
+        img.tolist(),
+        directory=args.result_dir,
+        epoch=epoch,
+        flow_length=config['flow_length']
+    )
+
+    with
+
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -65,7 +74,7 @@ def main():
     )
 
     parser.add_argument(
-        "--log_interval", type=int, default=300,
+        "--log_interval", type=int, default=30,
         help="How frequenlty to print the training stats."
     )
     parser.add_argument(
@@ -98,15 +107,14 @@ def main():
         "name": "planar"
     }
 
-    # flow = NormalizingFlow(dim=2, flow_length=config['flow_length'])
-    # bound = FreeEnergyBound(density=p_z)
     x_32, _, _ = load_data(name='low', dataset='train')  # [x, y, w]
+    print('data_shape', x_32.shape)
 
-    train_loader = torch.utils.data.DataLoader(x_32, batch_size=config['batch_size'], num_workers=2)
+    train_loader = torch.utils.data.DataLoader(x_32, batch_size=config['batch_size'], num_workers=2, drop_last=True)
     model = PlainGenerator(base_dim=32, img_dim=32*32).to(device)
 
-    optimizer = optim.RMSprop(model.parameters(), lr=config['initial_lr'])
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, config['lr_decay'])
+    optimizer = optim.SGD(model.parameters(), lr=config['initial_lr'], momentum=0.9)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30])
 
     plot_density(p_z, directory=args.result_dir)
 
@@ -114,8 +122,11 @@ def main():
 
     for epoch in range(1, config['epochs'] + 1):
         train(args, config, model, train_loader, optimizer, epoch, device, scheduler)
+        test(args, config, model, epoch)
 
 
 
 if __name__ == "__main__":
     main()
+
+

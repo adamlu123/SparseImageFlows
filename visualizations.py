@@ -5,22 +5,16 @@ import torch
 from torch.autograd import Variable
 from matplotlib import pyplot as plt
 
-def scatter_points(points, directory, iteration, flow_length):
-
-    X_LIMS = (-7, 7)
-    Y_LIMS = (-7, 7)
-
+def density_plots(img, directory, epoch, flow_length):
     fig = plt.figure(figsize=(7, 7))
     ax = fig.add_subplot(111)
-    ax.scatter(points[:, 0], points[:, 1], alpha=0.7, s=25)
-    ax.set_xlim(*X_LIMS)
-    ax.set_ylim(*Y_LIMS)
+    ax.imshow(img[0])
     ax.set_title(
-        "Flow length: {}\n Samples on iteration #{}"
-        .format(flow_length, iteration)
+        "Flow length: {}\n Samples on epoch #{}"
+        .format(flow_length, epoch)
     )
 
-    fig.savefig(os.path.join(directory, "flow_result_{}.png".format(iteration)))
+    fig.savefig(os.path.join(directory, "PlainGenerator_result_{}.png".format(epoch)))
     plt.close()
 
 

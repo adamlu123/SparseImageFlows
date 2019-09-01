@@ -84,10 +84,11 @@ class PlainGenerator(nn.Module):
         self.linear3 = nn.Linear(64, 128)
         self.linear_pi = nn.Linear(128, img_dim)
         self.linear_beta = nn.Linear(128, img_dim)
+        self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x):
-        x = self.linear1(x)
-        x = self.linear2(x)
+        x = self.sigmoid(self.linear1(x))
+        x = self.sigmoid(self.linear2(x))
         x = self.linear3(x)
         pi = torch.sigmoid(self.linear_pi(x))
         beta = self.linear_beta(x)
