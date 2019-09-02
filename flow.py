@@ -79,21 +79,36 @@ class PlanarFlowLogDetJacobian(nn.Module):
 class PlainGenerator(nn.Module):
     def __init__(self, base_dim, img_dim):
         super().__init__()
-        self.linear1 = nn.Linear(base_dim, 32)
-        self.linear2 = nn.Linear(32, 64)
-        self.linear3 = nn.Linear(64, 128)
+        # self.linear1 = nn.Linear(base_dim, 32)
+        # self.linear2 = nn.Linear(32, 64)
+        # self.linear3 = nn.Linear(64, 128)
+        self.Linear_layers = Linear_layers(base_dim, out_dim=128)
         self.linear_pi = nn.Linear(128, img_dim)
         self.linear_beta = nn.Linear(128, img_dim)
+        self.linear_std = nn.Linear(128, img_dim)
         self.sigmoid = torch.nn.Sigmoid()
 
+    def forward(self, x_pi,x_beta):
+        # x = self.sigmoid(self.linear1(x))
+        # x = self.sigmoid(self.linear2(x))
+        # x = self.linear3(x)
+        x_pi = self.Linear_layers(x_pi)
+        x_beta = self.Linear_layers(x_beta)
+        pi = torch.sigmoid(self.linear_pi(x_pi))
+        beta = torch.relu(self.linear_beta(x_beta))
+        std = torch.exp(self.linear_std(x_beta))
+        return pi, beta, std
+
+
+class Linear_layers(nn.Module):
+    def __init__(self, base_dim, out_dim):
+        super().__init__()
+        self.linear1 = nn.Linear(base_dim, 32)
+        self.linear2 = nn.Linear(32, 64)
+        self.linear3 = nn.Linear(64, out_dim)
     def forward(self, x):
-        x = self.sigmoid(self.linear1(x))
-        x = self.sigmoid(self.linear2(x))
+        x = torch.sigmoid(self.linear1(x))
+        x = torch.sigmoid(self.linear2(x))
         x = self.linear3(x)
-        pi = torch.sigmoid(self.linear_pi(x))
-        beta = torch.relu(self.linear_beta(x))
-        return pi, beta
-
-
-
+        return x
 
