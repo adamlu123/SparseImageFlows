@@ -25,7 +25,7 @@ class SparseCE(nn.Module):
         zero = torch.zeros_like(x).cuda()
         one = torch.ones_like(x).cuda()
         z = torch.where(x > zero, one, zero)
-        ce_beta = np.log(1 / np.sqrt(2 * np.pi)) - (beta - x)**2 / (2*std**2)
+        ce_beta = np.log(1 / np.sqrt(2 * np.pi)) - (beta - x)**2 / (2*1**2)
         ce_beta = torch.where(z > 0, ce_beta, zero)
         # if ce_beta.shape[0] != 128:
         #     print(ce_beta.shape)

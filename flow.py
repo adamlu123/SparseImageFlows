@@ -76,28 +76,6 @@ class PlanarFlowLogDetJacobian(nn.Module):
         return safe_log(det_grad.abs())
 
 
-class PlainGenerator(nn.Module):
-    def __init__(self, base_dim, img_dim):
-        super().__init__()
-        # self.linear1 = nn.Linear(base_dim, 32)
-        # self.linear2 = nn.Linear(32, 64)
-        # self.linear3 = nn.Linear(64, 128)
-        self.Linear_layers = Linear_layers(base_dim, out_dim=128)
-        self.linear_pi = nn.Linear(128, img_dim)
-        self.linear_beta = nn.Linear(128, img_dim)
-        self.linear_std = nn.Linear(128, img_dim)
-        self.sigmoid = torch.nn.Sigmoid()
-
-    def forward(self, x_pi,x_beta):
-        # x = self.sigmoid(self.linear1(x))
-        # x = self.sigmoid(self.linear2(x))
-        # x = self.linear3(x)
-        x_pi = self.Linear_layers(x_pi)
-        x_beta = self.Linear_layers(x_beta)
-        pi = torch.sigmoid(self.linear_pi(x_pi))
-        beta = torch.relu(self.linear_beta(x_beta))
-        std = torch.exp(self.linear_std(x_beta))
-        return pi, beta, std
 
 
 class Linear_layers(nn.Module):
@@ -112,3 +90,69 @@ class Linear_layers(nn.Module):
         x = self.linear3(x)
         return x
 
+class PlainGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        # self.linear1 = nn.Linear(base_dim, 32)
+        # self.linear2 = nn.Linear(32, 64)
+        # self.linear3 = nn.Linear(64, 128)
+        self.Linear_layers1 = Linear_layers(base_dim, out_dim=128)
+        self.Linear_layers2 = Linear_layers(base_dim, out_dim=128)
+        self.linear_pi = nn.Linear(128, img_dim)
+        self.linear_beta = nn.Linear(128, img_dim)
+        self.linear_std = nn.Linear(128, img_dim)
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x_pi,x_beta):
+        # x = self.sigmoid(self.linear1(x))
+        # x = self.sigmoid(self.linear2(x))
+        # x = self.linear3(x)
+        x_pi = self.Linear_layers1(x_pi)
+        x_beta = self.Linear_layers2(x_beta)
+        pi = torch.sigmoid(self.linear_pi(x_pi))
+        beta = torch.relu(self.linear_beta(x_beta))
+        std = torch.exp(self.linear_std(x_beta))
+        return pi, beta, std
+
+
+
+
+class DeConvLayers(nn.Module):
+    def __init__(self, base_dim, out_dim):
+        super().__init__()
+        self.ConvTranspose2d_1 = nn.ConvTranspose2d(in_channels=1, out_channels=1,
+                                                    kernel_size=5, stride=1, dilation=1)
+        self.ConvTranspose2d_2 = nn.ConvTranspose2d(in_channels=1, out_channels=1,
+                                                    kernel_size=5, stride=1, dilation=1)
+        self.ConvTranspose2d_3 = nn.ConvTranspose2d(in_channels=1, out_channels=1,
+                                                    kernel_size=5, stride=1, dilation=1)
+        self.ConvTranspose2d_4 = nn.ConvTranspose2d(in_channels=1, out_channels=1,
+                                                    kernel_size=5, stride=1, dilation=1)
+
+    def forward(self, x):
+        out = self.ConvTranspose2d_1(x)
+        out = self.ConvTranspose2d_2(out)
+        out = self.ConvTranspose2d_3(out)
+        out = self.ConvTranspose2d_4(out)
+        return out
+
+class PlainDeconvGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        self.DeConvLayers = DeConvLayers(base_dim, out_dim=32)
+        self.DeConvLayers_beta = DeConvLayers(base_dim, out_dim=32)
+        self.linear_pi = nn.Linear(32*32, img_dim)
+        self.linear_beta = nn.Linear(32*32, img_dim)
+        self.linear_std = nn.Linear(32*32, img_dim)
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x_pi, x_beta):
+        x_pi = self.DeConvLayers(x_pi)
+        x_pi = x_pi.view(-1,32*32)
+        x_beta = self.DeConvLayers(x_beta) #.view(-1,32*32)
+        x_beta = x_beta.view(-1, 32 * 32)
+
+        pi = torch.sigmoid(self.linear_pi(x_pi))
+        beta = torch.relu(self.linear_beta(x_beta))
+        std = torch.exp(self.linear_std(x_beta))
+        return pi, beta, std

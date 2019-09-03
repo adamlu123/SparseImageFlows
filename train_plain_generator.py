@@ -9,7 +9,7 @@ from torch.distributions import Normal
 import torch.utils.data
 
 from visualizations import plot_density, density_plots
-from flow import NormalizingFlow, PlainGenerator
+from flow import NormalizingFlow, PlainGenerator, PlainDeconvGenerator
 from losses import FreeEnergyBound, SparseCE
 from densities import p_z
 import utils
@@ -38,7 +38,8 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
         data = data.view(config['batch_size'], 32*32)
         optimizer.zero_grad()
 
-        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size']*2, 32]).cuda()
+        # noisesamples = Normal(loc=0, scale=1).sample([config['batch_size']*2, 32]).cuda()
+        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'] * 2, 1, 16, 16]).cuda()
         pi, beta, std = model(noisesamples[:config['batch_size']],noisesamples[config['batch_size']:])
 
         loss = SparseCE()(pi, beta, std, data)
@@ -51,14 +52,17 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
     print(mean_pi[16,:])
     print(data.view(-1, 32, 32).mean(dim=0)[16,:])  ###
     scheduler.step()
+    return model
+
 
 
 
 def test(args, config, model, epoch):
     model.eval()
-    numsamples = 100
-    noisesamples = Normal(loc=0, scale=1).sample([numsamples*2, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
-    pi, beta, std = model(noisesamples[:numsamples],noisesamples[numsamples:])
+    numsamples = 10000
+    noisesamples = Normal(loc=0, scale=1).sample([numsamples * 2, 1, 16, 16]).cuda()
+    # noisesamples = Normal(loc=0, scale=1).sample([numsamples*2, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
+    pi, beta, std = model(noisesamples[:numsamples], noisesamples[numsamples:])
     img = utils.get_img_sample(pi, beta, std)
 
     if epoch % 10 == 0:
@@ -119,7 +123,7 @@ def main():
         "lr_decay": 0.999,
         "flow_length": 16,
         "name": "planar",
-        "subset": "bg"
+        "subset": "signal"
     }
 
     if not os.path.isdir(args.result_dir):
@@ -134,10 +138,13 @@ def main():
 
     x_32, _, _ = load_data(config['subset'], dataset='train')  # [x, y, w]
     x_32 = x_32 * 1e2
-    print('data_shape', x_32.shape)
+    # x_32[x_32>0] = 1
 
+    print('data_shape', x_32.shape)
+    # print(x_32.mean(dim=0)[16, :])
     train_loader = torch.utils.data.DataLoader(x_32, batch_size=config['batch_size'], num_workers=2, drop_last=True)
-    model = PlainGenerator(base_dim=32, img_dim=32*32).to(device)
+    # model = PlainGenerator(base_dim=32, img_dim=32*32).to(device)
+    model = PlainDeconvGenerator(base_dim=32, img_dim=32 * 32).to(device)
 
     optimizer = optim.SGD(model.parameters(), lr=config['initial_lr'], momentum=0.9)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30])
@@ -147,7 +154,7 @@ def main():
 
 
     for epoch in range(1, config['epochs'] + 1):
-        train(args, config, model, train_loader, optimizer, epoch, device, scheduler)
+        model = train(args, config, model, train_loader, optimizer, epoch, device, scheduler)
         test(args, config, model, epoch)
 
 
