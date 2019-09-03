@@ -19,7 +19,7 @@ class FreeEnergyBound(nn.Module):
 
 class SparseCE(nn.Module):
     def __init__(self):
-         super().__init__()
+         super(SparseCE).__init__()
 
     def forward(self, pi, beta, std, x):
         zero = torch.zeros_like(x).cuda()
@@ -32,3 +32,25 @@ class SparseCE(nn.Module):
         cross_entropy = (z * torch.log(pi) + (1 - z) * torch.log(1 - pi) + ce_beta).mean()
         return -cross_entropy
 
+
+# class SparseCE_mixture_flow(nn.Module):
+#     def __init__(self):
+#         super(SparseCE_mixture_flow).__init__()
+#
+#     def forward(self, pi, beta, std, x):
+#         zero = torch.zeros_like(x).cuda()
+#         one = torch.ones_like(x).cuda()
+#         z = torch.where(x > zero, one, zero)
+#         loglike_beta = np.log(1 / np.sqrt(2 * np.pi)) - (beta - x)**2 / (2*std**2)
+#         loglike_beta = torch.where(z > 0, loglike_beta, zero)
+#         cross_entropy = (z * torch.log(pi) + (1 - z) * torch.log(1 - pi) + loglike_beta).mean()
+#         return -cross_entropy
+
+def SparseCE_mixture_flow(pi, beta, std, x):
+    zero = torch.zeros_like(x).cuda()
+    one = torch.ones_like(x).cuda()
+    z = torch.where(x > zero, one, zero)
+    loglike_beta = np.log(1 / np.sqrt(2 * np.pi)) - (beta - x) ** 2 / (2 * std ** 2)
+    loglike_beta = torch.where(z > 0, loglike_beta, zero)
+    cross_entropy = (z * torch.log(pi) + (1 - z) * torch.log(1 - pi) + loglike_beta).mean()
+    return -cross_entropy

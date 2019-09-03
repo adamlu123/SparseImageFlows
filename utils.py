@@ -24,7 +24,7 @@ def load_batch_x(x, batchsize=256, start=0, stop=None):
 
 def get_img_sample(pi, beta, std):
     binaries = Bernoulli(pi).sample()
-    betas = Normal(loc=beta, scale=1).sample()
+    betas = Normal(loc=beta, scale=std).sample()
     img = (binaries * betas).view(-1,32,32).cpu().data.numpy()
     img[img<0]=0
     return img

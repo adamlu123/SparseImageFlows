@@ -156,3 +156,29 @@ class PlainDeconvGenerator(nn.Module):
         beta = torch.relu(self.linear_beta(x_beta))
         std = torch.exp(self.linear_std(x_beta))
         return pi, beta, std
+
+
+class PlainGenerator_pi(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        self.Linear_layers1 = Linear_layers(base_dim, out_dim=128)
+        self.linear_pi = nn.Linear(128, img_dim)
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x_pi):
+        x_pi = self.Linear_layers1(x_pi)
+        pi = torch.sigmoid(self.linear_pi(x_pi))
+        return pi
+
+class FlowGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        self.pi_generator = PlainGenerator_pi(base_dim, img_dim)
+        # self.beta_generator = NormalizingFlow(dim=32*32, flow_length=8)
+        ones = torch.ones(32*32)
+        self.beta = nn.Parameter(0.01*ones).cuda()
+        self.std = nn.Parameter(0.01*ones).cuda()
+    def forward(self, x_pi, x_beta):
+        pi = self.pi_generator(x_pi)
+        # beta, std = self.beta_generator(x_beta)
+        return pi, self.beta, self.std
