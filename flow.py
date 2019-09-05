@@ -110,7 +110,7 @@ class PlainGenerator(nn.Module):
         x_pi = self.Linear_layers1(x_pi)
         x_beta = self.Linear_layers2(x_beta)
         pi = torch.sigmoid(self.linear_pi(x_pi))
-        beta = torch.exp(self.linear_beta(x_beta))
+        beta = torch.relu(self.linear_beta(x_beta))
         std = torch.exp(self.linear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
         return pi, beta, std
 

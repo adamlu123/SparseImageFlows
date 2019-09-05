@@ -21,14 +21,6 @@ sys.path.append(PATH)
 from utils import load_data, load_data_LAGAN
 
 
-
-def is_log(iteration):
-    return iteration % args.log_interval == 0
-
-def is_plot(iteration):
-    return iteration % args.plot_interval == 0
-
-
 def train(args, config, model, train_loader, optimizer, epoch, device, scheduler):
     print('Epoch: {}'.format(epoch))
     model.train()
@@ -63,13 +55,13 @@ def test(args, config, model, epoch):
     # noisesamples = Normal(loc=0, scale=1).sample([numsamples * 2, 1, 16, 16]).cuda()
     noisesamples = Normal(loc=0, scale=1).sample([numsamples*2, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
     pi, beta, std = model(noisesamples[:numsamples], noisesamples[numsamples:])
-    # print('std', std)
+    print('std', std)
     img = utils.get_img_sample(config, pi, beta, std)
 
-    if epoch % 10 == 0:
+    if epoch % config['save_result_intervel'] == 0:
         density_plots(
                     img.tolist(),
-                    directory=config['subset_dir'],
+                    directory=args.result_dir,
                     epoch=epoch,
                     flow_length=config['flow_length'],
                     config=config)
@@ -77,10 +69,10 @@ def test(args, config, model, epoch):
 
         save_values = True
         if save_values:
-            with open(args.result_dir + '/img_samples_{}.pkl'.format(epoch), 'wb') as f:
+            with open(args.result_dir + '/img_samples_{}.pkl'.format(epoch), 'wb')  as f:
                 pkl.dump(img.tolist(), f)
             with open(args.result_dir + '/pi_{}.pkl'.format(epoch), 'wb') as f:
-                pkl.dump(pi.view(numsamples,32,32).cpu().data.numpy(), f)
+                pkl.dump(pi.view(numsamples, config['width'], config['width']).cpu().data.numpy(), f)
 
 
 
@@ -121,7 +113,8 @@ def main():
         "flow_length": 16,
         "name": "planar",
         "subset": "signal",
-        "width": 25
+        "width": 25,
+        "save_result_intervel": 1
     }
 
     if not os.path.isdir(args.result_dir):
