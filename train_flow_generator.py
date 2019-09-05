@@ -95,12 +95,12 @@ def main():
     )
     parser.add_argument(
         "--plot_points", type=int, default=1000,
-        help="How many to points to generate for one plot."
+        help="How many points to generate for one plot."
     )
 
     parser.add_argument(
         "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/mixtureflow',
-        help="How many to points to generate for one plot."
+        help="result_dir"
     )
 
     args = parser.parse_args()
@@ -109,7 +109,7 @@ def main():
     config = {
         "batch_size": 128,
         "epochs": 100,
-        "initial_lr": 0.01,
+        "initial_lr": 0.001,
         "lr_decay": 0.999,
         "flow_length": 16,
         "name": "planar",

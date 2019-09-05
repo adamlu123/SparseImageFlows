@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
-
+import numpy as np
 from utils import safe_log
 
 
@@ -85,9 +85,9 @@ class Linear_layers(nn.Module):
         self.linear2 = nn.Linear(32, 64)
         self.linear3 = nn.Linear(64, out_dim)
     def forward(self, x):
-        x = torch.sigmoid(self.linear1(x))
-        x = torch.sigmoid(self.linear2(x))
-        x = self.linear3(x)
+        x = torch.relu(self.linear1(x))
+        x = torch.relu(self.linear2(x))
+        x = torch.relu(self.linear3(x))
         return x
 
 class PlainGenerator(nn.Module):
@@ -110,8 +110,8 @@ class PlainGenerator(nn.Module):
         x_pi = self.Linear_layers1(x_pi)
         x_beta = self.Linear_layers2(x_beta)
         pi = torch.sigmoid(self.linear_pi(x_pi))
-        beta = torch.relu(self.linear_beta(x_beta))
-        std = torch.exp(self.linear_std(x_beta))
+        beta = torch.exp(self.linear_beta(x_beta))
+        std = torch.exp(self.linear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
         return pi, beta, std
 
 

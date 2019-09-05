@@ -19,13 +19,13 @@ class FreeEnergyBound(nn.Module):
 
 class SparseCE(nn.Module):
     def __init__(self):
-         super(SparseCE).__init__()
+         super().__init__()
 
     def forward(self, pi, beta, std, x):
         zero = torch.zeros_like(x).cuda()
         one = torch.ones_like(x).cuda()
         z = torch.where(x > zero, one, zero)
-        ce_beta = np.log(1 / np.sqrt(2 * np.pi)) - (beta - x)**2 / (2*1**2)
+        ce_beta = np.log(1 / np.sqrt(2 * np.pi)) - (beta - x)**2 / (2*std**2)
         ce_beta = torch.where(z > 0, ce_beta, zero)
         # if ce_beta.shape[0] != 128:
         #     print(ce_beta.shape)
