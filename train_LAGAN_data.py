@@ -39,7 +39,10 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
         optimizer.step()
 
         if iteration % args.log_interval == 0:
-            print("Loss on iteration {}: {}".format(iteration , loss.tolist()))
+            print("Loss on iteration {}: {}, beta.max: {}, pi.min:{}, pi.max{}".format(iteration , loss.tolist(),
+                                                                                   beta.max().tolist(),
+                                                                                   pi.min().tolist(),pi.max().tolist()))
+
     mean_pi = pi.view(config['batch_size'], config['width'], config['width']).mean(dim=0).data ###
     print(mean_pi[16,:])
     print(data.view(-1, config['width'], config['width']).mean(dim=0)[16,:])  ###
@@ -55,9 +58,9 @@ def test(args, config, model, epoch):
     # noisesamples = Normal(loc=0, scale=1).sample([numsamples * 2, 1, 16, 16]).cuda()
     noisesamples = Normal(loc=0, scale=1).sample([numsamples*2, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
     pi, beta, std = model(noisesamples[:numsamples], noisesamples[numsamples:])
-    print('std', std)
-    img = utils.get_img_sample(config, pi, beta, std)
 
+    img = utils.get_img_sample(config, pi, beta, std)
+    print('std.max', std.max().tolist(), 'img.max', img.max())
     if epoch % config['save_result_intervel'] == 0:
         density_plots(
                     img.tolist(),
@@ -107,8 +110,8 @@ def main():
     torch.manual_seed(42)
     config = {
         "batch_size": 256,
-        "epochs": 200,
-        "initial_lr": 0.01,
+        "epochs": 100,
+        "initial_lr": 0.001,
         "lr_decay": 0.999,
         "flow_length": 16,
         "name": "planar",

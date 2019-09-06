@@ -3,17 +3,18 @@ import os
 import pickle as pkl
 
 import torch
-from torch.autograd import Variable
+from torch import nn
 from torch import optim
 from torch.distributions import Normal
 import torch.utils.data
 
-from visualizations import plot_density, density_plots
-from flow import NormalizingFlow, PlainGenerator, PlainDeconvGenerator
+from visualizations import plot_density, density_plots, plot_histogram
+# from flow import NormalizingFlow, PlainGenerator, PlainDeconvGenerator
 from losses import FreeEnergyBound, SparseCE
 from densities import p_z
 import utils
 
+import matplotlib.pyplot as plt
 import numpy as np
 import sys
 PATH = '/home/baldig-projects/julian/sisr/muon'
@@ -21,12 +22,61 @@ sys.path.append(PATH)
 from utils import load_data, load_data_LAGAN
 
 
+class Linear_layersLeakyReLU(nn.Module):
+    def __init__(self, base_dim, out_dim):
+        super().__init__()
+        self.linear1 = nn.Linear(base_dim, 32)
+        self.linear2 = nn.Linear(32, 128)
+        self.linear3 = nn.Linear(128, 256)
+        self.linear4 = nn.Linear(256, out_dim)
+    def forward(self, x):
+        x = torch.nn.LeakyReLU()(self.linear1(x))
+        x = torch.nn.LeakyReLU()(self.linear2(x))
+        x = torch.nn.LeakyReLU()(self.linear3(x))
+        x = torch.nn.LeakyReLU()(self.linear4(x))
+        return x
 
-def is_log(iteration):
-    return iteration % args.log_interval == 0
+class Linear_layers(nn.Module):
+    def __init__(self, base_dim, out_dim):
+        super().__init__()
+        self.linear1 = nn.Linear(base_dim, 32)
+        self.linear2 = nn.Linear(32, 128)
+        self.linear3 = nn.Linear(128, 256)
+        self.linear4 = nn.Linear(256, out_dim)
+    def forward(self, x):
+        x = torch.relu(self.linear1(x))
+        x = torch.relu(self.linear2(x))
+        x = torch.relu(self.linear3(x))
+        x = torch.exp(self.linear4(x))
+        return x
 
-def is_plot(iteration):
-    return iteration % args.plot_interval == 0
+class PlainGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        # self.linear1 = nn.Linear(base_dim, 32)
+        # self.linear2 = nn.Linear(32, 64)
+        # self.linear3 = nn.Linear(64, 128)
+        self.Linear_layers1 = Linear_layers(base_dim, out_dim=128)
+        self.Linear_layers2 = Linear_layers(base_dim, out_dim=128)
+        self.linear_pi = nn.Linear(128, img_dim)
+        self.linear_beta = nn.Linear(128, img_dim)
+        self.linear_std = nn.Linear(128, img_dim)
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, x_pi,x_beta):
+        # x = self.sigmoid(self.linear1(x))
+        # x = self.sigmoid(self.linear2(x))
+        # x = self.linear3(x)
+        x_pi = self.Linear_layers1(x_pi)
+        x_beta = self.Linear_layers2(x_beta)
+        pi = torch.sigmoid(self.linear_pi(x_pi))
+        # pi = torch.max(torch.ones_like(pi), pi)
+        beta = torch.exp(self.linear_beta(x_beta))
+        # beta = torch.min(20*torch.ones_like(pi), beta)
+        std = torch.exp(self.linear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
+        std = torch.min(0.5 * torch.ones_like(pi), std)
+
+        return pi, beta, std
 
 
 def train(args, config, model, train_loader, optimizer, epoch, device, scheduler):
@@ -49,8 +99,8 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
         if iteration % args.log_interval == 0:
             print("Loss on iteration {}: {}".format(iteration , loss.tolist()))
     mean_pi = pi.view(config['batch_size'], config['width'], config['width']).mean(dim=0).data ###
-    print(mean_pi[16,:])
-    print(data.view(-1, config['width'], config['width']).mean(dim=0)[16,:])  ###
+    print('mean_pi', mean_pi[16,:])
+    print('mean_data', data.view(-1, config['width'], config['width']).mean(dim=0)[16,:])  ###
     scheduler.step()
     return model
 
@@ -67,26 +117,14 @@ def test(args, config, model, epoch):
     img = utils.get_img_sample(config, pi, beta, std)
 
     if epoch % 10 == 0:
-        density_plots(
-                    img.tolist(),
-                    directory=config['subset_dir'],
-                    epoch=epoch,
-                    flow_length=config['flow_length'],
-                    config=config)
-
-        # with open(args.result_dir + '/pi.txt', 'a') as f:
-        #     f.write('\n epoch:{} \n'.format(epoch))
-        #     f.write(str(pi.view(32,32).cpu().data.numpy()))
-        # with open(args.result_dir + '/img_samples.txt', 'a') as f:
-        #     f.write('\n epoch:{} \n'.format(epoch))
-        #     f.write(str(img[0]))
-
         save_values = True
         if save_values:
             with open(config['subset_dir'] + '/img_samples_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(img.tolist(), f)
             with open(config['subset_dir'] + '/pi_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(pi.view(numsamples,32,32).cpu().data.numpy(), f)
+            plot_histogram(img, dir=config['subset_dir'],epoch=epoch)
+
 
 
 
@@ -120,7 +158,7 @@ def main():
     device = torch.device("cuda")
     torch.manual_seed(42)
     config = {
-        "batch_size": 128,
+        "batch_size": 32,
         "epochs": 200,
         "initial_lr": 0.01,
         "lr_decay": 0.999,

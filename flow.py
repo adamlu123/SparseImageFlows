@@ -77,17 +77,33 @@ class PlanarFlowLogDetJacobian(nn.Module):
 
 
 
+class Linear_layersLeakyReLU(nn.Module):
+    def __init__(self, base_dim, out_dim):
+        super().__init__()
+        self.linear1 = nn.Linear(base_dim, 32)
+        self.linear2 = nn.Linear(32, 128)
+        self.linear3 = nn.Linear(128, 256)
+        self.linear4 = nn.Linear(256, out_dim)
+    def forward(self, x):
+        x = torch.nn.LeakyReLU()(self.linear1(x))
+        x = torch.nn.LeakyReLU()(self.linear2(x))
+        x = torch.nn.LeakyReLU()(self.linear3(x))
+        x = torch.nn.LeakyReLU()(self.linear4(x))
+        return x
+
 
 class Linear_layers(nn.Module):
     def __init__(self, base_dim, out_dim):
         super().__init__()
         self.linear1 = nn.Linear(base_dim, 32)
-        self.linear2 = nn.Linear(32, 64)
-        self.linear3 = nn.Linear(64, out_dim)
+        self.linear2 = nn.Linear(32, 128)
+        self.linear3 = nn.Linear(128, 256)
+        self.linear4 = nn.Linear(256, out_dim)
     def forward(self, x):
         x = torch.relu(self.linear1(x))
         x = torch.relu(self.linear2(x))
         x = torch.relu(self.linear3(x))
+        x = torch.relu(self.linear4(x))
         return x
 
 class PlainGenerator(nn.Module):
@@ -96,8 +112,8 @@ class PlainGenerator(nn.Module):
         # self.linear1 = nn.Linear(base_dim, 32)
         # self.linear2 = nn.Linear(32, 64)
         # self.linear3 = nn.Linear(64, 128)
-        self.Linear_layers1 = Linear_layers(base_dim, out_dim=128)
-        self.Linear_layers2 = Linear_layers(base_dim, out_dim=128)
+        self.Linear_layers1 = Linear_layersLeakyReLU(base_dim, out_dim=128)
+        self.Linear_layers2 = Linear_layersLeakyReLU(base_dim, out_dim=128)
         self.linear_pi = nn.Linear(128, img_dim)
         self.linear_beta = nn.Linear(128, img_dim)
         self.linear_std = nn.Linear(128, img_dim)
@@ -110,8 +126,12 @@ class PlainGenerator(nn.Module):
         x_pi = self.Linear_layers1(x_pi)
         x_beta = self.Linear_layers2(x_beta)
         pi = torch.sigmoid(self.linear_pi(x_pi))
-        beta = torch.relu(self.linear_beta(x_beta))
+        # pi = torch.max(torch.ones_like(pi), pi)
+        beta = self.linear_beta(x_beta)
+        beta = torch.min(20*torch.ones_like(pi), beta)
         std = torch.exp(self.linear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
+        # std = torch.min(60 * torch.ones_like(pi), std)
+
         return pi, beta, std
 
 

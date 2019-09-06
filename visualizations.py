@@ -5,6 +5,13 @@ import torch
 from torch.autograd import Variable
 from matplotlib import pyplot as plt
 
+def plot_histogram(img, dir,epoch):
+    _, bins, _ = plt.hist(img.mean(axis=0).ravel(),
+                                      bins=np.linspace(0, 0.05, 50), histtype='step', label='truth', color='blue')
+    plt.title('mean histogram of generated image')
+    plt.savefig(dir+'mean_hist_epoch{}.png'.format(epoch))
+    plt.close()
+
 def density_plots(img, directory, epoch, flow_length, config):
     fig = plt.figure(figsize=(7, 7))
     ax = fig.add_subplot(111)

@@ -109,7 +109,7 @@ def main():
     config = {
         "batch_size": 128,
         "epochs": 100,
-        "initial_lr": 0.001,
+        "initial_lr": 0.01,
         "lr_decay": 0.999,
         "flow_length": 16,
         "name": "planar",

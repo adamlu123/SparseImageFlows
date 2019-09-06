@@ -79,4 +79,5 @@ def load_data_LAGAN():
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
         image = np.asarray(f['image'])
+    # image[image>0] = np.log(image[image>0])
     return image
