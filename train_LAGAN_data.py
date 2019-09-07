@@ -13,7 +13,6 @@ from flow import NormalizingFlow, PlainGenerator, PlainDeconvGenerator
 from losses import FreeEnergyBound, SparseCE
 from densities import p_z
 import utils
-
 import numpy as np
 import sys
 PATH = '/home/baldig-projects/julian/sisr/muon'
@@ -39,13 +38,15 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
         optimizer.step()
 
         if iteration % args.log_interval == 0:
-            print("Loss on iteration {}: {}, beta.max: {}, pi.min:{}, pi.max{}".format(iteration , loss.tolist(),
-                                                                                   beta.max().tolist(),
+            print("Loss on iteration {}: {}, beta.max: {}, beta.mean:{} pi.min:{}, pi.max{}".format(iteration , loss.tolist(),
+                                                                                   beta.max().tolist(), beta.mean().tolist(),
                                                                                    pi.min().tolist(),pi.max().tolist()))
 
     mean_pi = pi.view(config['batch_size'], config['width'], config['width']).mean(dim=0).data ###
-    print(mean_pi[16,:])
-    print(data.view(-1, config['width'], config['width']).mean(dim=0)[16,:])  ###
+    print('beta mean, max and min',beta.mean(), beta.max(), beta.min())
+    print('data mean', data.mean())
+    # print('mean_pi row 12',mean_pi[12,:])
+    # print('data mean row 12',data.view(-1, config['width'], config['width']).mean(dim=0)[12,:])  ###
     scheduler.step()
     return model
 
@@ -123,12 +124,16 @@ def main():
     if not os.path.isdir(args.result_dir):
         os.mkdir(args.result_dir)
 
-    x_32 = load_data_LAGAN()
+    raw_img = load_data_LAGAN()
+    # log_img = np.zeros_like(raw_img)
+    # log_img[raw_img>0] = np.log(raw_img[raw_img>0])
 
-    print('data_shape', x_32.shape)
-    train_loader = torch.utils.data.DataLoader(x_32, batch_size=config['batch_size'], num_workers=2, drop_last=True)
+    print('data_shape', raw_img.shape)
+    train_loader = torch.utils.data.DataLoader(raw_img, batch_size=config['batch_size'], num_workers=2, drop_last=True)
     model = PlainGenerator(base_dim=32, img_dim=config['width']**2).to(device)
     # model = PlainDeconvGenerator(base_dim=32, img_dim=32 * 32).to(device)
+    for key, param in model.named_parameters():
+        print(key)
 
     optimizer = optim.SGD(model.parameters(), lr=config['initial_lr'], momentum=0.9)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30])

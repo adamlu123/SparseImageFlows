@@ -25,9 +25,14 @@ def load_batch_x(x, batchsize=256, start=0, stop=None):
 def get_img_sample(config, pi, beta, std):
     binaries = Bernoulli(pi).sample()
     betas = Normal(loc=beta, scale=std).sample()
-    img = (binaries * betas).view(-1,config['width'],config['width']).cpu().data.numpy()
-    img[img<0]=0
-    return img
+    generated = (binaries * betas).view(-1,config['width'],config['width']).cpu().data.numpy()
+    binaries = binaries.view(-1,config['width'],config['width']).cpu().data.numpy()
+
+    # img = np.zeros_like(generated)
+    # img[binaries>0] = np.exp(generated[binaries>0]) # scale it back
+
+
+    return generated
 
 def get_shuffled_indices(num_samples):
     indices = list(range(num_samples))

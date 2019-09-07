@@ -118,19 +118,21 @@ class PlainGenerator(nn.Module):
         self.linear_beta = nn.Linear(128, img_dim)
         self.linear_std = nn.Linear(128, img_dim)
         self.sigmoid = torch.nn.Sigmoid()
+        self.BatchNorm = nn.BatchNorm1d(128)
 
     def forward(self, x_pi,x_beta):
         # x = self.sigmoid(self.linear1(x))
         # x = self.sigmoid(self.linear2(x))
         # x = self.linear3(x)
         x_pi = self.Linear_layers1(x_pi)
-        x_beta = self.Linear_layers2(x_beta)
+        x_beta = self.BatchNorm(self.Linear_layers2(x_beta))
         pi = torch.sigmoid(self.linear_pi(x_pi))
         # pi = torch.max(torch.ones_like(pi), pi)
+
         beta = self.linear_beta(x_beta)
-        beta = torch.min(20*torch.ones_like(pi), beta)
-        std = torch.exp(self.linear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
-        # std = torch.min(60 * torch.ones_like(pi), std)
+        # beta = torch.max(2*torch.ones_like(pi), beta)
+        std = 3*torch.sigmoid(self.linear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
+        # std = torch.min(1 * torch.ones_like(pi), std)
 
         return pi, beta, std
 
