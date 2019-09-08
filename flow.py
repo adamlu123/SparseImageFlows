@@ -204,3 +204,56 @@ class FlowGenerator(nn.Module):
         pi = self.pi_generator(x_pi)
         # beta, std = self.beta_generator(x_beta)
         return pi, self.beta, self.std
+
+
+
+class SinglePixelLinear(nn.Module):
+    def __init__(self, width=25):
+        super().__init__()
+        self.W = nn.Parameter(torch.ones(width,width))
+    def forward(self, x_beta):
+        return x_beta * self.W
+
+
+class PixelwiseLinears(nn.Module):
+    def __init__(self,num_layers):
+        super().__init__()
+        self.num_layers = num_layers
+        modules = []
+        for i in range(self.num_layers):
+            modules.append(SinglePixelLinear())
+            modules.append(nn.LeakyReLU())
+        self.layers = nn.Sequential(*modules)
+
+    def forward(self, x_beta):
+        return self.layers(x_beta)
+
+
+class PixelwiseGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        self.Linear_layers = Linear_layersLeakyReLU(base_dim, out_dim=128)
+        self.pixelwiselinears = PixelwiseLinears(num_layers=3)
+        self.SinglePixelLinear = SinglePixelLinear()
+        self.linear_pi = nn.Linear(128, img_dim)
+        self.SinglePixelLinear_std = SinglePixelLinear()
+        self.sigmoid = torch.nn.Sigmoid()
+        self.BatchNorm = nn.BatchNorm2d(1)
+
+    def forward(self, x_pi,x_beta):
+        x_pi = self.Linear_layers(x_pi)
+        x_beta = self.BatchNorm(self.pixelwiselinears(x_beta))
+        pi = torch.sigmoid(self.linear_pi(x_pi))
+
+        beta = torch.exp(self.SinglePixelLinear(x_beta))
+        # beta_scale = torch.ones_like(beta)
+        # beta_scale[:, 0, 12, 12] = -1
+        # beta = beta_scale * beta
+        std = 1*torch.sigmoid(self.SinglePixelLinear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
+        scale = torch.ones_like(std)
+        scale[:,0,12,12] = 100
+        std = scale * std
+
+
+
+        return pi, beta, std

@@ -9,7 +9,7 @@ from torch.distributions import Normal
 import torch.utils.data
 
 from visualizations import plot_density, density_plots
-from flow import NormalizingFlow, PlainGenerator, PlainDeconvGenerator
+from flow import NormalizingFlow, PlainGenerator, PlainDeconvGenerator, PixelwiseGenerator
 from losses import FreeEnergyBound, SparseCE
 from densities import p_z
 import utils
@@ -27,11 +27,16 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
     for iteration, data in enumerate(train_loader):
         data = data.type(torch.cuda.FloatTensor)#.to(device)
         data = data.view(config['batch_size'], config['width']**2)
+        # data = data.view(config['batch_size'], config['width'],config['width'])
         optimizer.zero_grad()
 
-        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size']*2, 32]).cuda()
-        # noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'] * 2, 1, 16, 16]).cuda()
-        pi, beta, std = model(noisesamples[:config['batch_size']],noisesamples[config['batch_size']:])
+        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'], 32]).cuda()
+        noisesamples_beta = Normal(loc=0, scale=1).sample([config['batch_size'], 1,
+                                                      config['width'], config['width']]).cuda()
+        pi, beta, std = model(noisesamples, noisesamples_beta)
+        beta = beta.view(config['batch_size'], -1)
+        std = std.view(config['batch_size'], -1)
+        # pi, beta, std = model(noisesamples[:config['batch_size']],noisesamples[config['batch_size']:])
 
         loss = SparseCE()(pi, beta, std, data)
         loss.backward()
@@ -56,19 +61,20 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
 def test(args, config, model, epoch):
     model.eval()
     numsamples = 10000
-    # noisesamples = Normal(loc=0, scale=1).sample([numsamples * 2, 1, 16, 16]).cuda()
-    noisesamples = Normal(loc=0, scale=1).sample([numsamples*2, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
-    pi, beta, std = model(noisesamples[:numsamples], noisesamples[numsamples:])
+    noisesamples = Normal(loc=0, scale=1).sample([numsamples, 32]).cuda()
+    noisesamples_beta = Normal(loc=0, scale=1).sample([numsamples, 1,
+                                                       config['width'], config['width']]).cuda()
+    pi, beta, std = model(noisesamples, noisesamples_beta)
 
     img = utils.get_img_sample(config, pi, beta, std)
     print('std.max', std.max().tolist(), 'img.max', img.max())
     if epoch % config['save_result_intervel'] == 0:
-        density_plots(
-                    img.tolist(),
-                    directory=args.result_dir,
-                    epoch=epoch,
-                    flow_length=config['flow_length'],
-                    config=config)
+        # density_plots(
+        #             img.tolist(),
+        #             directory=args.result_dir,
+        #             epoch=epoch,
+        #             flow_length=config['flow_length'],
+        #             config=config)
 
 
         save_values = True
@@ -102,7 +108,7 @@ def main():
     )
 
     parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/LAGAN_test',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/LAGAN_pixelwise',
         help="How many to points to generate for one plot."
     )
 
@@ -110,7 +116,7 @@ def main():
     device = torch.device("cuda")
     torch.manual_seed(42)
     config = {
-        "batch_size": 256,
+        "batch_size": 512,
         "epochs": 100,
         "initial_lr": 0.001,
         "lr_decay": 0.999,
@@ -124,14 +130,19 @@ def main():
     if not os.path.isdir(args.result_dir):
         os.mkdir(args.result_dir)
 
+    print('start to build model')
+    # model = PlainDeconvGenerator(base_dim=32, img_dim=32 * 32).to(device)
+    # model = PlainGenerator(base_dim=32, img_dim=config['width']**2).to(device)
+    model = PixelwiseGenerator(base_dim=32, img_dim=config['width'] ** 2).to(device)
+
+    print('start to load data')
     raw_img = load_data_LAGAN()
     # log_img = np.zeros_like(raw_img)
     # log_img[raw_img>0] = np.log(raw_img[raw_img>0])
-
     print('data_shape', raw_img.shape)
     train_loader = torch.utils.data.DataLoader(raw_img, batch_size=config['batch_size'], num_workers=2, drop_last=True)
-    model = PlainGenerator(base_dim=32, img_dim=config['width']**2).to(device)
-    # model = PlainDeconvGenerator(base_dim=32, img_dim=32 * 32).to(device)
+
+
     for key, param in model.named_parameters():
         print(key)
 

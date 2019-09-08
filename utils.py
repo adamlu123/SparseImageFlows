@@ -24,9 +24,11 @@ def load_batch_x(x, batchsize=256, start=0, stop=None):
 
 def get_img_sample(config, pi, beta, std):
     binaries = Bernoulli(pi).sample()
-    betas = Normal(loc=beta, scale=std).sample()
+    binaries = binaries.view(-1,config['width'],config['width'])
+
+    zeros = torch.zeros_like(binaries)
+    betas = torch.max(zeros, Normal(loc=beta, scale=std).sample().squeeze())
     generated = (binaries * betas).view(-1,config['width'],config['width']).cpu().data.numpy()
-    binaries = binaries.view(-1,config['width'],config['width']).cpu().data.numpy()
 
     # img = np.zeros_like(generated)
     # img[binaries>0] = np.exp(generated[binaries>0]) # scale it back
