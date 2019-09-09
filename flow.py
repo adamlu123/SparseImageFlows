@@ -211,8 +211,9 @@ class SinglePixelLinear(nn.Module):
     def __init__(self, width=25):
         super().__init__()
         self.W = nn.Parameter(torch.ones(width,width))
+        self.bias = nn.Parameter(torch.ones(width,width))
     def forward(self, x_beta):
-        return x_beta * self.W
+        return x_beta * self.W + self.bias
 
 
 class PixelwiseLinears(nn.Module):
@@ -245,15 +246,12 @@ class PixelwiseGenerator(nn.Module):
         x_beta = self.BatchNorm(self.pixelwiselinears(x_beta))
         pi = torch.sigmoid(self.linear_pi(x_pi))
 
-        beta = torch.exp(self.SinglePixelLinear(x_beta))
+        beta = torch.relu(self.SinglePixelLinear(x_beta))
         beta_scale = torch.ones_like(beta)
         beta_scale[:, 0, 12, 12] = 25
         beta = beta_scale * beta
         std = 1*torch.sigmoid(self.SinglePixelLinear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
         scale = torch.ones_like(std)
-        scale[:,0,12,12] = 60
+        scale[:,0,11:14,11:14] = 60
         std = scale * std
-
-
-
         return pi, beta, std

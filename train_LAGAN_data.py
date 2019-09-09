@@ -109,11 +109,11 @@ def main():
     )
 
     parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/LAGAN_pixelwise/signal',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/LAGAN_pixelwise/background',
         help="How many to points to generate for one plot."
     )
     parser.add_argument(
-        "--subset", type=str, default='signal', help="training on which subset"
+        "--subset", type=str, default='background', help="training on which subset"
     )
 
 
