@@ -76,8 +76,9 @@ def test(args, config, model, epoch):
         #             flow_length=config['flow_length'],
         #             config=config)
 
-
-        save_values = True
+        torch.save(model.state_dict(), args.result_dir+'/best_checkpoints.pt')
+        print('model saved!')
+        save_values = False
         if save_values:
             with open(args.result_dir + '/img_samples_{}.pkl'.format(epoch), 'wb')  as f:
                 pkl.dump(img.tolist(), f)
@@ -108,21 +109,24 @@ def main():
     )
 
     parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/LAGAN_pixelwise',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/LAGAN_pixelwise/signal',
         help="How many to points to generate for one plot."
     )
+    parser.add_argument(
+        "--subset", type=str, default='signal', help="training on which subset"
+    )
+
 
     args = parser.parse_args()
     device = torch.device("cuda")
     torch.manual_seed(42)
     config = {
         "batch_size": 512,
-        "epochs": 100,
+        "epochs": 30,
         "initial_lr": 0.001,
         "lr_decay": 0.999,
         "flow_length": 16,
         "name": "planar",
-        "subset": "signal",
         "width": 25,
         "save_result_intervel": 1
     }
@@ -136,7 +140,7 @@ def main():
     model = PixelwiseGenerator(base_dim=32, img_dim=config['width'] ** 2).to(device)
 
     print('start to load data')
-    raw_img = load_data_LAGAN()
+    raw_img = load_data_LAGAN(subset=args.subset)
     # log_img = np.zeros_like(raw_img)
     # log_img[raw_img>0] = np.log(raw_img[raw_img>0])
     print('data_shape', raw_img.shape)

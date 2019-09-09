@@ -246,12 +246,12 @@ class PixelwiseGenerator(nn.Module):
         pi = torch.sigmoid(self.linear_pi(x_pi))
 
         beta = torch.exp(self.SinglePixelLinear(x_beta))
-        # beta_scale = torch.ones_like(beta)
-        # beta_scale[:, 0, 12, 12] = -1
-        # beta = beta_scale * beta
+        beta_scale = torch.ones_like(beta)
+        beta_scale[:, 0, 12, 12] = 25
+        beta = beta_scale * beta
         std = 1*torch.sigmoid(self.SinglePixelLinear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
         scale = torch.ones_like(std)
-        scale[:,0,12,12] = 100
+        scale[:,0,12,12] = 60
         std = scale * std
 
 

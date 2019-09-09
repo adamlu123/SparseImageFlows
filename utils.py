@@ -82,9 +82,21 @@ def load_data(subset, dataset='train'):
 
 
 
-def load_data_LAGAN():
+def load_data_LAGAN(subset='signal'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
         image = np.asarray(f['image'])
-    # image[image>0] = np.log(image[image>0])
-    return image
+        real_labels = np.asarray(f['signal'])
+    real_imagebg = image[real_labels == 0]
+    real_imagesg = image[real_labels == 1]
+    print(real_imagebg.shape, real_imagesg.shape)
+
+    if subset == 'background':
+        print('return background')
+        return real_imagebg
+    elif subset == 'signal':
+        print('return signal')
+        return real_imagesg
+    elif subset == 'All':
+        print('return all')
+        return image
