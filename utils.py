@@ -23,17 +23,15 @@ def load_batch_x(x, batchsize=256, start=0, stop=None):
 
 
 def get_img_sample(config, pi, beta, std):
-    binaries = Bernoulli(pi).sample()
+    binaries = Bernoulli(pi).sample().view(-1,config['width'],config['width'])
     binaries = binaries.view(-1,config['width'],config['width'])
 
     zeros = torch.zeros_like(binaries)
-    betas = torch.max(zeros, Normal(loc=beta, scale=std).sample().squeeze())
+    betas = torch.max(zeros, Normal(loc=beta, scale=std).sample().squeeze().view(-1,config['width'],config['width']))
     generated = (binaries * betas).view(-1,config['width'],config['width']).cpu().data.numpy()
 
     # img = np.zeros_like(generated)
     # img[binaries>0] = np.exp(generated[binaries>0]) # scale it back
-
-
     return generated
 
 def get_shuffled_indices(num_samples):
@@ -59,13 +57,13 @@ def load_data(subset, dataset='train'):
         # x2 = np.outer(w2, np.ones([32, 32])).reshape(w2.shape[0], 32, 32) * x2
         y2 = np.ones((x2.shape[0],))
 
-    if subset == 'bg':
-        print('loading bg')
+    if subset == 'background':
+        print('loading background image!')
         indices = get_shuffled_indices(x1.shape[0])
         return [x1[indices, :, :], y1[indices]]
         # return [x1[indices, :, :], y1[indices], w1[indices]]
     elif subset == 'signal':
-        print('signal')
+        print('loading signal image')
         indices = get_shuffled_indices(x2.shape[0])
         return [x2[indices, :, :], y2[indices]]
         # return [x2[indices, :, :], y2[indices], w2[indices]]

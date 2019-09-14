@@ -123,6 +123,7 @@ def test(args, config, model, epoch):
                 pkl.dump(img.tolist(), f)
             with open(config['subset_dir'] + '/pi_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(pi.view(numsamples,32,32).cpu().data.numpy(), f)
+                print('results saved on epoch {} !'.format(epoch))
             plot_histogram(img, dir=config['subset_dir'],epoch=epoch)
 
 
@@ -164,7 +165,7 @@ def main():
         "lr_decay": 0.999,
         "flow_length": 16,
         "name": "planar",
-        "subset": "signal",
+        "subset": "background",
         "width": 32
     }
 
@@ -174,6 +175,7 @@ def main():
     subset_dir = args.result_dir + '/' + config['subset']
     config['subset_dir'] = subset_dir
     if not os.path.isdir(subset_dir):
+        print('create dir', subset_dir)
         os.mkdir(subset_dir)
 
 

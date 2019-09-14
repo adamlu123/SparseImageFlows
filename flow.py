@@ -6,76 +6,6 @@ import numpy as np
 from utils import safe_log
 
 
-class NormalizingFlow(nn.Module):
-
-    def __init__(self, dim, flow_length):
-        super().__init__()
-
-        self.transforms = nn.Sequential(*(
-            PlanarFlow(dim) for _ in range(flow_length)
-        ))
-
-        self.log_jacobians = nn.Sequential(*(
-            PlanarFlowLogDetJacobian(t) for t in self.transforms
-        ))
-
-    def forward(self, z):
-
-        log_jacobians = []
-
-        for transform, log_jacobian in zip(self.transforms, self.log_jacobians):
-            log_jacobians.append(log_jacobian(z))
-            z = transform(z)
-
-        zk = z
-
-        return zk, log_jacobians
-
-
-class PlanarFlow(nn.Module):
-
-    def __init__(self, dim):
-        super().__init__()
-
-        self.weight = nn.Parameter(torch.Tensor(1, dim))
-        self.bias = nn.Parameter(torch.Tensor(1))
-        self.scale = nn.Parameter(torch.Tensor(1, dim))
-        self.tanh = nn.Tanh()
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-
-        self.weight.data.uniform_(-0.01, 0.01)
-        self.scale.data.uniform_(-0.01, 0.01)
-        self.bias.data.uniform_(-0.01, 0.01)
-
-    def forward(self, z):
-
-        activation = F.linear(z, self.weight, self.bias)
-        return z + self.scale * self.tanh(activation)
-
-
-class PlanarFlowLogDetJacobian(nn.Module):
-    """A helper class to compute the determinant of the gradient of
-    the planar flow transformation."""
-
-    def __init__(self, affine):
-        super().__init__()
-
-        self.weight = affine.weight
-        self.bias = affine.bias
-        self.scale = affine.scale
-        self.tanh = affine.tanh
-
-    def forward(self, z):
-
-        activation = F.linear(z, self.weight, self.bias)
-        psi = (1 - self.tanh(activation) ** 2) * self.weight
-        det_grad = 1 + torch.mm(psi, self.scale.t())
-        return safe_log(det_grad.abs())
-
-
 
 class Linear_layersLeakyReLU(nn.Module):
     def __init__(self, base_dim, out_dim):
@@ -254,4 +184,63 @@ class PixelwiseGenerator(nn.Module):
         scale = torch.ones_like(std)
         scale[:,0,11:14,11:14] = 60
         std = scale * std
+        return pi, beta, std
+
+
+def logit(x):
+    return torch.log(x) - torch.log(1 - x)
+
+class DSF(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.W1 = nn.Parameter(torch.tensor(1.)).cuda()
+        self.bias = nn.Parameter(torch.tensor(1.)).cuda()
+        self.W2 = nn.Parameter(torch.tensor(1.)).cuda()
+
+    def forward(self, x):
+        x = torch.sigmoid(self.W2) * torch.sigmoid(self.W1 * x + self.bias)
+        x = logit(x)
+        return x
+
+
+class JointConvGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 4, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(4, 8, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(8, 16, kernel_size=3, padding=1)
+        self.conv4 = nn.Conv2d(16, 1, kernel_size=3, padding=1)
+        modules = [self.conv1, self.conv2, self.conv3, self.conv4]
+        self.layers = nn.Sequential(*modules)
+        self.SinglePixelLinear_pi = SinglePixelLinear()
+        self.linear_pi = nn.Linear(25**2, 25**2)
+        self.DSF = DSF()
+
+    def forward(self, x):
+        x = x.view(-1, 1, 25, 25)
+        x = self.layers(x)
+        pi = torch.sigmoid(self.linear_pi(x.view(-1,25**2)))
+        beta = torch.exp(self.DSF(x))
+        std = torch.ones_like(beta)
+        return pi, beta, std
+
+
+class JointLinearGenerator(nn.Module):
+    def __init__(self, base_dim, img_dim):
+        super().__init__()
+        self.Linear_layers1 = Linear_layersLeakyReLU(base_dim, out_dim=128)
+        self.SinglePixelLinear_beta = SinglePixelLinear()
+        self.linear_pi = nn.Linear(128, 25**2)
+        self.linear_beta = nn.Linear(128, 25**2)
+        # self.DSF = DSF()
+
+    def forward(self, x):
+        x = self.Linear_layers1(x)
+        pi = torch.sigmoid(self.linear_pi(x))
+
+        beta = self.linear_beta(x).view(-1, 25, 25)
+        # beta = torch.exp(self.SinglePixelLinear_beta(beta))
+        # beta = torch.exp(self.SinglePixelLinear_beta(beta))
+        beta = torch.exp(self.SinglePixelLinear_beta(beta))
+        std = torch.ones_like(beta)
         return pi, beta, std
