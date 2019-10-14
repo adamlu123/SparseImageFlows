@@ -29,9 +29,9 @@ class SparseCE(nn.Module):
         ce_beta = np.log(1 / np.sqrt(2 * np.pi)) - (beta - x)**2 / (2*std**2)
         ce_beta = torch.where(z > 0, ce_beta, zero)
 
-        cross_entropy = (z * torch.log(pi) + (1 - z) * torch.log(1 - pi) + ce_beta).mean()
+        cross_entropy = -(z * torch.log(pi) + (1 - z) * torch.log(1 - pi) + ce_beta).mean()
         # regularization = torch.abs(pi.mean() - 0.15)
-        return -cross_entropy
+        return cross_entropy
 
 
 # class SparseCE_mixture_flow(nn.Module):

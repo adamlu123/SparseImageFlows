@@ -25,7 +25,7 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
     model.train()
 
     for iteration, data in enumerate(train_loader):
-        data = data.type(torch.cuda.FloatTensor)#.to(device)
+        data = data.type(torch.cuda.FloatTensor)  #.to(device)
         data = data.view(config['batch_size'], config['width']**2)
         # data = data.view(config['batch_size'], config['width'],config['width'])
         optimizer.zero_grad()

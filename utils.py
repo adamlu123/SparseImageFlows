@@ -30,8 +30,9 @@ def get_img_sample(config, pi, beta, std):
     betas = torch.max(zeros, Normal(loc=beta, scale=std).sample().squeeze().view(-1,config['width'],config['width']))
     generated = (binaries * betas).view(-1,config['width'],config['width']).cpu().data.numpy()
 
-    # img = np.zeros_like(generated)
-    # img[binaries>0] = np.exp(generated[binaries>0]) # scale it back
+    img = np.zeros_like(generated)
+    binaries = binaries.cpu().data.numpy()
+    img[binaries>0] = np.exp(generated[binaries>0]) # scale it back
     return generated
 
 def get_shuffled_indices(num_samples):

@@ -68,13 +68,14 @@ class PlainGenerator(nn.Module):
         # x = self.sigmoid(self.linear2(x))
         # x = self.linear3(x)
         x_pi = self.Linear_layers1(x_pi)
-        x_beta = self.Linear_layers2(x_beta)
+        x_beta = self.Linear_layers1(x_beta)
         pi = torch.sigmoid(self.linear_pi(x_pi))
         # pi = torch.max(torch.ones_like(pi), pi)
-        beta = torch.exp(self.linear_beta(x_beta))
+        beta = torch.tanh(self.linear_beta(x_beta))
         # beta = torch.min(20*torch.ones_like(pi), beta)
         std = torch.exp(self.linear_std(x_beta))  #np.sqrt(0.5) * torch.ones_like(beta)#
-        std = torch.min(0.5 * torch.ones_like(pi), std)
+        # std = torch.min(0.5 * torch.ones_like(pi), std)
+        std = torch.max(1.5 * torch.ones_like(pi), std)
 
         return pi, beta, std
 
@@ -85,22 +86,28 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
 
     for iteration, data in enumerate(train_loader):
         data = data.type(torch.cuda.FloatTensor)#.to(device)
+        # std_data = data.std(dim=0)
         data = data.view(config['batch_size'], config['width']**2)
         optimizer.zero_grad()
 
-        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size']*2, 32]).cuda()
+        noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'], 32]).cuda()
         # noisesamples = Normal(loc=0, scale=1).sample([config['batch_size'] * 2, 1, 16, 16]).cuda()
-        pi, beta, std = model(noisesamples[:config['batch_size']],noisesamples[config['batch_size']:])
+        pi, beta, std = model(noisesamples, noisesamples)
 
         loss = SparseCE()(pi, beta, std, data)
         loss.backward()
         optimizer.step()
 
         if iteration % args.log_interval == 0:
-            print("Loss on iteration {}: {}".format(iteration , loss.tolist()))
+            print("Loss on iteration {}: {}, beta.max(): {}, data.max(): {}".format(iteration ,
+                                                                                    loss.tolist(),
+                                                                                    beta.mean().tolist(),
+                                                                                    data.mean().tolist())
+                  )
     mean_pi = pi.view(config['batch_size'], config['width'], config['width']).mean(dim=0).data ###
     print('mean_pi', mean_pi[16,:])
     print('mean_data', data.view(-1, config['width'], config['width']).mean(dim=0)[16,:])  ###
+    print('beta.max()', beta.max())
     scheduler.step()
     return model
 
@@ -111,8 +118,8 @@ def test(args, config, model, epoch):
     model.eval()
     numsamples = 10000
     # noisesamples = Normal(loc=0, scale=1).sample([numsamples * 2, 1, 16, 16]).cuda()
-    noisesamples = Normal(loc=0, scale=1).sample([numsamples*2, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
-    pi, beta, std = model(noisesamples[:numsamples], noisesamples[numsamples:])
+    noisesamples = Normal(loc=0, scale=1).sample([numsamples, 32]).cuda()  # Variable(random_normal_samples(args.plot_points))
+    pi, beta, std = model(noisesamples, noisesamples)
     # print('std', std)
     img = utils.get_img_sample(config, pi, beta, std)
 
@@ -159,7 +166,7 @@ def main():
     device = torch.device("cuda")
     torch.manual_seed(42)
     config = {
-        "batch_size": 32,
+        "batch_size": 64,
         "epochs": 200,
         "initial_lr": 0.01,
         "lr_decay": 0.999,
@@ -182,12 +189,13 @@ def main():
 
     x_32, _ = load_data(config['subset'], dataset='train')  # [x, y, w]
     x_32 = x_32 #* 1e2
-
+    log_img = np.zeros_like(x_32)
+    log_img[x_32>0] = np.log(x_32[x_32>0])
     # x_32 = load_data_LAGAN()
 
     print('data_shape', x_32.shape)
     # print(x_32.mean(dim=0)[16, :])
-    train_loader = torch.utils.data.DataLoader(x_32, batch_size=config['batch_size'], num_workers=2, drop_last=True)
+    train_loader = torch.utils.data.DataLoader(log_img, batch_size=config['batch_size'], num_workers=2, drop_last=True)
     model = PlainGenerator(base_dim=32, img_dim=config['width']**2).to(device)
     # model = PlainDeconvGenerator(base_dim=32, img_dim=32 * 32).to(device)
 
