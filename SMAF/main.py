@@ -57,7 +57,7 @@ parser.add_argument(
 parser.add_argument(
     '--num-blocks',
     type=int,
-    default=5,
+    default=1,
     help='number of invertible blocks (default: 5)')
 parser.add_argument(
     '--seed', type=int, default=1, help='random seed (default: 1)')
