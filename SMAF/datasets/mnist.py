@@ -50,7 +50,7 @@ class MNIST:
     def __init__(self, logit=True, dequantize=True):
 
         # load dataset
-        f = gzip.open(datasets.root + 'mnist/mnist.pkl.gz', 'rb')
+        f = gzip.open(datasets.root + 'mnist.pkl.gz', 'rb')
         trn, val, tst = pickle.load(f, encoding='latin1')
         f.close()
 

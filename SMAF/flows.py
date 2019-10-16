@@ -502,3 +502,49 @@ class FlowSequential(nn.Sequential):
             cond_inputs = cond_inputs.to(device)
         samples = self.forward(noise, cond_inputs, mode='inverse')[0]
         return samples
+
+
+class MixtureFlowSequential(nn.Sequential):
+    """ A sequential container for Mixture of Dirac delta mass and Gamma density flows. (one layer)
+    In addition to a forward pass it implements a backward pass and
+    computes log jacobians.
+    """
+
+    def forward(self, inputs, cond_inputs=None, mode='direct', logdets=None):
+        """ Performs a forward or backward pass for flow modules.
+        Args:
+            inputs: a tuple of inputs and logdets
+            mode: to run direct computation or inverse
+        """
+        self.num_inputs = inputs.size(-1)
+
+        if logdets is None:
+            logdets = torch.zeros(inputs.size(0), 1, device=inputs.device)
+
+        assert mode in ['direct', 'inverse']
+        if mode == 'direct':
+            for module in self._modules.values():
+                inputs, logdet = module(inputs, cond_inputs, mode)
+                logdets += logdet
+        else:
+            for module in reversed(self._modules.values()):
+                inputs, logdet = module(inputs, cond_inputs, mode)
+                logdets += logdet
+
+        return logdets
+
+    def log_probs(self, inputs, cond_inputs=None):
+        u, log_jacob = self(inputs, cond_inputs)
+        log_probs = (-0.5 * u.pow(2) - 0.5 * math.log(2 * math.pi)).sum(
+            -1, keepdim=True)
+        return (log_probs).sum(-1, keepdim=True)
+
+    def sample(self, num_samples=None, noise=None, cond_inputs=None):
+        if noise is None:
+            noise = torch.Tensor(num_samples, self.num_inputs).normal_()
+        device = next(self.parameters()).device
+        noise = noise.to(device)
+        if cond_inputs is not None:
+            cond_inputs = cond_inputs.to(device)
+        samples = self.forward(noise, cond_inputs, mode='inverse')[0]
+        return samples

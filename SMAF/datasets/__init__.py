@@ -1,4 +1,4 @@
-root = 'data/'
+root = '/extra/yadongl10/BIG_sandbox/SparseImageFlows/data/'
 
 from .power import POWER
 from .gas import GAS

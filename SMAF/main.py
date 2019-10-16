@@ -40,7 +40,7 @@ parser.add_argument(
     '--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
 parser.add_argument(
     '--dataset',
-    default='POWER',
+    default='MNIST',
     help='POWER | GAS | HEPMASS | MINIBONE | BSDS300 | MOONS')
 parser.add_argument(
     '--flow', default='maf', help='flow to use: maf | realnvp | glow')
