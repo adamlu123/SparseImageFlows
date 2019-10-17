@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Gamma
-
+import utils
 
 def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     """
@@ -93,9 +93,11 @@ class MADE(nn.Module):
             gamma = torch.sigmoid(gamma)
             alpha = torch.relu(alpha) + 1.1
 
-            beta = 1  # TODO: can change beta to other value
-            g = Gamma(concentration=alpha, rate=beta)
-            ll = torch.where(inputs > 0, gamma*g.log_prob(inputs), (1-gamma).log()).sum(dim=-1, keepdim=True)
+            beta = torch.ones_like(alpha)  # TODO: can change beta to other value
+            # g = Gamma(concentration=alpha, rate=beta)
+            ll = torch.where(inputs > 0,
+                             gamma * utils.gamma_log_prob(alpha, beta, inputs),
+                             (1-gamma).log()).sum(dim=-1, keepdim=True)
             return ll
 
         else:

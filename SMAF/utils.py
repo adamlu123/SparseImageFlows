@@ -75,3 +75,11 @@ def load_data_LAGAN(subset='signal'):
     elif subset == 'All':
         print('return all')
         return image
+
+
+def gamma_log_prob(concentration, rate, value):
+    value = torch.where(value > 0, value, value+1e-4)  # to avoid nan in torch.log(val)
+    logprob = (concentration * torch.log(rate) +
+            (concentration - 1) * torch.log(value) -
+            rate * value - torch.lgamma(concentration))
+    return logprob  #torch.where(value>0, logprob, torch.zeros_like(logprob))
