@@ -62,8 +62,8 @@ def save_images(epoch, best_model, cond):
 def load_data_LAGAN(subset='signal'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
-        image = np.asarray(f['image'][:10000])
-        real_labels = np.asarray(f['signal'][:10000])
+        image = np.asarray(f['image'][:])
+        real_labels = np.asarray(f['signal'][:])
     real_imagebg = image[real_labels == 0]
     real_imagesg = image[real_labels == 1]
     print(real_imagebg.shape, real_imagesg.shape)
@@ -107,11 +107,11 @@ def MTsample(alpha, beta=1):
     """
     alpha = alpha.detach()
     batch_size = alpha.shape[0]
-    num_samples = 3
+    num_samples = 4
     alpha_mod = torch.where(alpha>1, alpha, alpha+1)
     U_alpha = Uniform(0, 1).sample([batch_size]).cuda()  # for each element of alpha sample 3 times to ensure at least one is accepted.
 
-    d = (alpha_mod - 1 / 3).repeat(3, 1).t()
+    d = (alpha_mod - 1 / 3).repeat(num_samples, 1).t()
     c = 1. / torch.sqrt(9. * d)
     Z = Normal(0, 1).sample([batch_size, num_samples]).cuda()
     U = Uniform(0, 1).sample([batch_size, num_samples]).cuda()
@@ -119,9 +119,9 @@ def MTsample(alpha, beta=1):
 
     condition = get_condition(Z, U, c, V, d).type(torch.float)
     out = condition * d * V
-    processed_out = torch.stack([out[p, :][out[p, :] > 0][:1] for p in range(batch_size)])  # shape (batch_size,1)
+    processed_out = torch.stack([out[p, :][out[p, :] > 0][0] for p in range(batch_size)]).squeeze()
 
-    mod_out = torch.where(alpha > 1, processed_out, processed_out.squeeze() * U_alpha**(1/alpha))
+    mod_out = torch.where(alpha > 1, processed_out, processed_out * U_alpha**(1/alpha))
 
     return mod_out
 

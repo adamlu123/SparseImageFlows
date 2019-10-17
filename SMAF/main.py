@@ -2,7 +2,7 @@ import argparse
 import copy
 import math
 import sys
-
+import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -16,6 +16,8 @@ import datasets
 import mixflows as fnn
 import utils
 from utils import load_data_LAGAN
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 if sys.version_info < (3, 6):
     print('Sorry, this code might need Python 3.6 or higher')
@@ -330,9 +332,15 @@ best_model = model
 
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
-    samples = model.sample(num_samples=args.batch_size)
-
     train(epoch)
+    if epoch % 5 == 0 and epoch > 0:
+        print('start sampling')
+        start = time.time()
+        samples = model.sample(num_samples=args.batch_size)
+        duration = time.time() - start
+        print('end sampling, duration:{}'.format(duration))
+
+
     # validation_loss = validate(epoch, model, valid_loader)
 
     # if epoch - best_validation_epoch >= 30:

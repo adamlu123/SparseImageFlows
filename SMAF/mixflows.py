@@ -105,6 +105,7 @@ class MADE(nn.Module):
         else:
             x = torch.zeros_like(inputs)
             for i_col in range(inputs.shape[1]):
+                # print('sampling the {}th pixel'.format(i_col))
                 h = self.joiner(x, cond_inputs)
                 gamma, alpha = self.trunk(h).chunk(2, 1)
                 gamma = torch.sigmoid(gamma)
