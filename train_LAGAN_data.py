@@ -73,7 +73,7 @@ def test(args, config, model, epoch):
         print('model saved!')
         save_values = False
         if save_values:
-            with open(args.result_dir + '/img_samples_{}.pkl'.format(epoch), 'wb')  as f:
+            with open(args.result_dir + '/img_samples_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(img.tolist(), f)
             with open(args.result_dir + '/pi_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(pi.view(numsamples, config['width'], config['width']).cpu().data.numpy(), f)

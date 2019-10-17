@@ -2,6 +2,9 @@ import argparse
 import copy
 import math
 import sys
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+import pickle as pkl
 import time
 import numpy as np
 import torch
@@ -11,13 +14,11 @@ import torch.optim as optim
 import torch.utils.data
 from tqdm import tqdm
 # from tensorboardX import SummaryWriter
-
 import datasets
 import mixflows as fnn
 import utils
 from utils import load_data_LAGAN
-import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 
 if sys.version_info < (3, 6):
     print('Sorry, this code might need Python 3.6 or higher')
@@ -78,6 +79,10 @@ parser.add_argument(
         "--subset",
         type=str, default='background',
         help="training on which subset"
+    )
+parser.add_argument(
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_smaf',
+        help="result directory"
     )
 
 args = parser.parse_args()
@@ -333,12 +338,14 @@ best_model = model
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 5 == 0 and epoch > 0:
+    if epoch % 5 == 0:
         print('start sampling')
         start = time.time()
         samples = model.sample(num_samples=args.batch_size)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
+        with open(args.result_dir + '/img_sample_{}.pkl'.format(epoch), 'wb') as f:
+            pkl.dump(samples.tolist(), f)
 
 
     # validation_loss = validate(epoch, model, valid_loader)

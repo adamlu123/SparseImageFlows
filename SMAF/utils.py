@@ -86,6 +86,9 @@ def gamma_log_prob(concentration, rate, value):
             rate * value - torch.lgamma(concentration))
     return logprob
 
+def normal_log_prob(mu, sd, value):
+    return np.log(1/np.sqrt(2*np.pi)) - sd.log() - (mu-value)**2/2*sd**2
+
 
 
 
@@ -106,8 +109,8 @@ def MTsample(alpha, beta=1):
     :return: mod_out
     """
     alpha = alpha.detach()
-    batch_size = alpha.shape[0]
-    num_samples = 4
+    batch_size = 1000
+    num_samples = 5
     alpha_mod = torch.where(alpha>1, alpha, alpha+1)
     U_alpha = Uniform(0, 1).sample([batch_size]).cuda()  # for each element of alpha sample 3 times to ensure at least one is accepted.
 
