@@ -330,6 +330,7 @@ best_model = model
 
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
+    samples = model.sample(num_samples=args.batch_size)
 
     train(epoch)
     # validation_loss = validate(epoch, model, valid_loader)

@@ -108,9 +108,9 @@ class MADE(nn.Module):
                 h = self.joiner(x, cond_inputs)
                 gamma, alpha = self.trunk(h).chunk(2, 1)
                 gamma = torch.sigmoid(gamma)
-                alpha = torch.relu(alpha) + 1.1
-                x[:, i_col] = MTsample(alpha=alpha, beta=1) #inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
-            return x 
+                alpha = torch.relu(alpha)
+                x[:, i_col] = utils.MTsample(alpha=alpha[:, i_col], beta=1)  #inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
+            return x
 
 
 
@@ -163,24 +163,23 @@ class FlowSequential(nn.Sequential):
             for module in self._modules.values():
                 logdet = module(inputs, cond_inputs, mode)
                 logdets += logdet
+            return logdets
         else:  # TODO: think about whether reverse needs adjustment
             for module in reversed(self._modules.values()):
-
-                inputs, logdet = module(inputs, cond_inputs, mode)
-                logdets += logdet
-
-        return logdets
+                inputs = module(inputs, cond_inputs, mode)
+                return inputs
 
     def log_probs(self, inputs):
         log_probs = self(inputs)
         return (log_probs).sum(-1, keepdim=True)
 
     def sample(self, num_samples=None, noise=None, cond_inputs=None):
+        input_size = 625
         if noise is None:
-            noise = torch.Tensor(num_samples, self.num_inputs).normal_()
+            noise = torch.Tensor(num_samples, input_size).normal_()
         device = next(self.parameters()).device
         noise = noise.to(device)
         if cond_inputs is not None:
             cond_inputs = cond_inputs.to(device)
-        samples = self.forward(noise, cond_inputs, mode='inverse')[0]
+        samples = self.forward(noise, cond_inputs, mode='inverse')
         return samples

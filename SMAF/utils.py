@@ -3,6 +3,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
+from torch.distributions import Normal, Uniform, Gamma, Bernoulli
 import torchvision
 import h5py
 
@@ -60,8 +62,8 @@ def save_images(epoch, best_model, cond):
 def load_data_LAGAN(subset='signal'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
-        image = np.asarray(f['image'])
-        real_labels = np.asarray(f['signal'])
+        image = np.asarray(f['image'][:10000])
+        real_labels = np.asarray(f['signal'][:10000])
     real_imagebg = image[real_labels == 0]
     real_imagesg = image[real_labels == 1]
     print(real_imagebg.shape, real_imagesg.shape)
@@ -82,4 +84,68 @@ def gamma_log_prob(concentration, rate, value):
     logprob = (concentration * torch.log(rate) +
             (concentration - 1) * torch.log(value) -
             rate * value - torch.lgamma(concentration))
-    return logprob  #torch.where(value>0, logprob, torch.zeros_like(logprob))
+    return logprob
+
+
+
+
+def get_condition(Z, U, c, V, d):
+    condition1 = Z>-1/c
+    condition2 = torch.log(U) < 0.5 * Z**2 + d - d*V + d*torch.log(V)
+    condition = condition1 * condition2
+    return condition
+
+def MTsample(alpha, beta=1):
+    """ To generate Gamma samples using Marsaglia and Tsang’s Method: https://dl.acm.org/citation.cfm?id=358414
+    1. create alpha_mod > 1
+    2. generate Gamma(alpha_mod, 1): processed_out
+    3. when the location is alpha<1, multiply with U_alpha**(1/alpha): mod_out
+
+    :param alpha: shape: [batchsize]
+    :param beta: 1
+    :return: mod_out
+    """
+    alpha = alpha.detach()
+    batch_size = alpha.shape[0]
+    num_samples = 3
+    alpha_mod = torch.where(alpha>1, alpha, alpha+1)
+    U_alpha = Uniform(0, 1).sample([batch_size]).cuda()  # for each element of alpha sample 3 times to ensure at least one is accepted.
+
+    d = (alpha_mod - 1 / 3).repeat(3, 1).t()
+    c = 1. / torch.sqrt(9. * d)
+    Z = Normal(0, 1).sample([batch_size, num_samples]).cuda()
+    U = Uniform(0, 1).sample([batch_size, num_samples]).cuda()
+    V = (1 + c * Z) ** 3
+
+    condition = get_condition(Z, U, c, V, d).type(torch.float)
+    out = condition * d * V
+    processed_out = torch.stack([out[p, :][out[p, :] > 0][:1] for p in range(batch_size)])  # shape (batch_size,1)
+
+    mod_out = torch.where(alpha > 1, processed_out, processed_out.squeeze() * U_alpha**(1/alpha))
+
+    return mod_out
+
+
+class MarsagliaTsampler(nn.Module):
+    """
+    Implement Marsaglia and Tsang’s method as a Gamma variable sampler: https://www.hongliangjie.com/2012/12/19/how-to-generate-gamma-random-variables/
+    """
+    def __init__(self, size):
+        super().__init__()
+        self.gamma_alpha = nn.Parameter(2.*torch.ones(size))
+
+        self.size = size
+    def forward(self, batch_size):
+        self.alpha = torch.relu(self.gamma_alpha) + 1  # right now only for alpha > 1
+        d = self.alpha - 1/3
+        c = 1. / torch.sqrt(9. * d)
+        Z = Normal(0, 1).sample([batch_size, self.size])
+        U = Uniform(0, 1).sample([batch_size, self.size])
+        V = (1+c*Z)**3
+
+        condition = get_condition(Z, U, c, V, d).type(torch.float)
+        out = condition * d*V
+        processed_out = torch.stack([out[:,p][out[:,p]>0][:10] for p in range(self.size)], dim=0).t()
+        # out = out[out>0]
+        detached_gamma_alpha = self.alpha  #.detach()
+        return processed_out, detached_gamma_alpha
