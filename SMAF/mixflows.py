@@ -91,20 +91,24 @@ class MADE(nn.Module):
             h = self.joiner(inputs, cond_inputs)
             gamma, alpha = self.trunk(h).chunk(2, 1)
             gamma = torch.sigmoid(gamma)
-            alpha = torch.relu(alpha) + 1.1
+            alpha = torch.relu(alpha) + 1e-2
 
             beta = torch.ones_like(alpha)  # TODO: can change beta to other value
             # g = Gamma(concentration=alpha, rate=beta)
             ll = torch.where(inputs > 0,
-                             gamma * utils.gamma_log_prob(alpha, beta, inputs),
+                             gamma.log() + utils.gamma_log_prob(alpha, beta, inputs),
                              (1-gamma).log()).sum(dim=-1, keepdim=True)
+            self.gamma = gamma.detach().cpu().numpy()
+            self.alpha = alpha.detach().cpu().numpy()
             return ll
 
         else:
             x = torch.zeros_like(inputs)
             for i_col in range(inputs.shape[1]):
                 h = self.joiner(x, cond_inputs)
-                m, a = self.trunk(h).chunk(2, 1)
+                gamma, alpha = self.trunk(h).chunk(2, 1)
+                gamma = torch.sigmoid(gamma)
+                alpha = torch.relu(alpha) + 1.1
                 x[:, i_col] = inputs[:, i_col] * torch.exp(
                     a[:, i_col]) + m[:, i_col]
             return x, -a.sum(-1, keepdim=True)
@@ -160,7 +164,7 @@ class FlowSequential(nn.Sequential):
             for module in self._modules.values():
                 logdet = module(inputs, cond_inputs, mode)
                 logdets += logdet
-        else:  # TODO: think about whether reverse is needed
+        else:  # TODO: think about whether reverse needs adjustment
             for module in reversed(self._modules.values()):
                 inputs, logdet = module(inputs, cond_inputs, mode)
                 logdets += logdet

@@ -259,6 +259,11 @@ def train(epoch):
         data = data.to(device)
         optimizer.zero_grad()
         loss = -model.log_probs(data).mean()
+        gamma = model._modules['0'].gamma
+        alpha = model._modules['0'].alpha
+        if batch_idx % args.log_interval == 0:
+            print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
+            print('alpha min:{}, alpha max:{}, alpha mean:{}'.format(alpha.min(), alpha.max(), alpha.mean()))
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
@@ -272,21 +277,21 @@ def train(epoch):
 
     pbar.close()
 
-    for module in model.modules():
-        if isinstance(module, fnn.BatchNormFlow):
-            module.momentum = 0
-
-    if args.cond:
-        with torch.no_grad():
-            model(train_loader.dataset.tensors[0].to(data.device),
-                  train_loader.dataset.tensors[1].to(data.device).float())
-    else:
-        with torch.no_grad():
-            model(train_loader.dataset.tensors[0].to(data.device))
-
-    for module in model.modules():
-        if isinstance(module, fnn.BatchNormFlow):
-            module.momentum = 1
+    # for module in model.modules():
+    #     if isinstance(module, fnn.BatchNormFlow):
+    #         module.momentum = 0
+    #
+    # if args.cond:
+    #     with torch.no_grad():
+    #         model(train_loader.dataset.tensors[0].to(data.device),
+    #               train_loader.dataset.tensors[1].to(data.device).float())
+    # else:
+    #     with torch.no_grad():
+    #         model(train_loader.dataset.tensors[0].to(data.device))
+    #
+    # for module in model.modules():
+    #     if isinstance(module, fnn.BatchNormFlow):
+    #         module.momentum = 1
 
 
 def validate(epoch, model, loader, prefix='Validation'):
@@ -327,23 +332,23 @@ for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
 
     train(epoch)
-    validation_loss = validate(epoch, model, valid_loader)
+    # validation_loss = validate(epoch, model, valid_loader)
 
-    if epoch - best_validation_epoch >= 30:
-        break
+    # if epoch - best_validation_epoch >= 30:
+    #     break
 
-    if validation_loss < best_validation_loss:
-        best_validation_epoch = epoch
-        best_validation_loss = validation_loss
-        best_model = copy.deepcopy(model)
+    # if validation_loss < best_validation_loss:
+    #     best_validation_epoch = epoch
+    #     best_validation_loss = validation_loss
+    #     best_model = copy.deepcopy(model)
 
-    print(
-        'Best validation at epoch {}: Average Log Likelihood in nats: {:.4f}'.
-            format(best_validation_epoch, -best_validation_loss))
+    # print(
+    #     'Best validation at epoch {}: Average Log Likelihood in nats: {:.4f}'.
+    #         format(best_validation_epoch, -best_validation_loss))
 
-    if args.dataset == 'MOONS' and epoch % 10 == 0:
-        utils.save_moons_plot(epoch, model, dataset)
-    elif args.dataset == 'MNIST' and epoch % 1 == 0:
-        utils.save_images(epoch, model, args.cond)
+    # if args.dataset == 'MOONS' and epoch % 10 == 0:
+    #     utils.save_moons_plot(epoch, model, dataset)
+    # elif args.dataset == 'MNIST' and epoch % 1 == 0:
+    #     utils.save_images(epoch, model, args.cond)
 
-validate(best_validation_epoch, best_model, test_loader, prefix='Test')
+# validate(best_validation_epoch, best_model, test_loader, prefix='Test')
