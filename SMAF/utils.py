@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torchvision
-
+import h5py
 
 def save_moons_plot(epoch, best_model, dataset):
     # generate some examples
@@ -55,3 +55,23 @@ def save_images(epoch, best_model, cond):
         pass
 
     torchvision.utils.save_image(imgs, 'images/img_{:03d}.png'.format(epoch), nrow=10)
+
+
+def load_data_LAGAN(subset='signal'):
+    img_dir = "/baldig/physicsprojects/lagan"
+    with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
+        image = np.asarray(f['image'])
+        real_labels = np.asarray(f['signal'])
+    real_imagebg = image[real_labels == 0]
+    real_imagesg = image[real_labels == 1]
+    print(real_imagebg.shape, real_imagesg.shape)
+
+    if subset == 'background':
+        print('return background')
+        return real_imagebg
+    elif subset == 'signal':
+        print('return signal')
+        return real_imagesg
+    elif subset == 'All':
+        print('return all')
+        return image
