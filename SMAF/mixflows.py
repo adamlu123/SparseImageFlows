@@ -109,9 +109,8 @@ class MADE(nn.Module):
                 gamma, alpha = self.trunk(h).chunk(2, 1)
                 gamma = torch.sigmoid(gamma)
                 alpha = torch.relu(alpha) + 1.1
-                x[:, i_col] = inputs[:, i_col] * torch.exp(
-                    a[:, i_col]) + m[:, i_col]
-            return x, -a.sum(-1, keepdim=True)
+                x[:, i_col] = MTsample(alpha=alpha, beta=1) #inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
+            return x 
 
 
 
@@ -166,6 +165,7 @@ class FlowSequential(nn.Sequential):
                 logdets += logdet
         else:  # TODO: think about whether reverse needs adjustment
             for module in reversed(self._modules.values()):
+
                 inputs, logdet = module(inputs, cond_inputs, mode)
                 logdets += logdet
 
