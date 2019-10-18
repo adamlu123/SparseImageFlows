@@ -98,12 +98,13 @@ def get_condition(Z, U, c, V, d):
     condition = condition1 * condition2
     return condition
 
-def MTsample(alpha, beta=1):
+def MTsample(gamma, alpha, beta=1):
     """ To generate Gamma samples using Marsaglia and Tsang’s Method: https://dl.acm.org/citation.cfm?id=358414
     1. create alpha_mod > 1
     2. generate Gamma(alpha_mod, 1): processed_out
     3. when the location is alpha<1, multiply with U_alpha**(1/alpha): mod_out
 
+    :param gamma: 0,1 prob
     :param alpha: shape: [batchsize]
     :param beta: 1
     :return: mod_out
@@ -126,7 +127,10 @@ def MTsample(alpha, beta=1):
 
     mod_out = torch.where(alpha > 1, processed_out, processed_out * U_alpha**(1/alpha))
 
-    return mod_out
+    z = Bernoulli(probs=gamma).sample()
+    samples = torch.where(z > 0., mod_out, torch.zeros_like(z))
+
+    return samples
 
 
 class MarsagliaTsampler(nn.Module):

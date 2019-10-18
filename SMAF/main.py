@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser(description='PyTorch Flows')
 parser.add_argument(
     '--batch-size',
     type=int,
-    default=100,
+    default=1000,
     help='input batch size for training (default: 100)')
 parser.add_argument(
     '--test-batch-size',

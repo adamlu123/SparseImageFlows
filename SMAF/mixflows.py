@@ -6,7 +6,7 @@ import scipy as sp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Gamma
+from torch.distributions import Gamma, Bernoulli
 import utils
 
 def get_mask(in_features, out_features, in_flow_features, mask_type=None):
@@ -94,7 +94,6 @@ class MADE(nn.Module):
             alpha = torch.exp(alpha) #+ 1e-2
 
             beta = torch.ones_like(alpha)  # TODO: can change beta to other value
-            # g = Gamma(concentration=alpha, rate=beta)
             ll = torch.where(inputs > 0,
                              gamma.log() + utils.gamma_log_prob(alpha, beta, inputs),
                              (1-gamma).log()).sum(dim=-1, keepdim=True)
@@ -105,13 +104,36 @@ class MADE(nn.Module):
         else:
             x = torch.zeros_like(inputs)
             for i_col in range(inputs.shape[1]):
-                # print('sampling the {}th pixel'.format(i_col))
                 h = self.joiner(x, cond_inputs)
                 gamma, alpha = self.trunk(h).chunk(2, 1)
                 gamma = torch.sigmoid(gamma)
-                alpha = torch.relu(alpha)
-                x[:, i_col] = utils.MTsample(alpha=alpha[:, i_col], beta=1)  #inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
+                alpha = torch.exp(alpha)
+                x[:, i_col] = utils.MTsample(gamma=gamma[:, i_col], alpha=alpha[:, i_col], beta=1)  #inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
             return x
+
+    # def forward(self, inputs, cond_inputs=None, mode='direct'):
+    #     if mode == 'direct':
+    #         h = self.joiner(inputs, cond_inputs)
+    #         gamma, alpha, beta = self.trunk(h).chunk(3, 1)
+    #         gamma = torch.sigmoid(gamma)
+    #         # alpha = torch.exp(alpha) #+ 1e-2
+    #         ll = torch.where(inputs > 0,
+    #                           gamma.log() + utils.normal_log_prob(mu=alpha, sd=beta.exp(), value=inputs),
+    #                           (1-gamma).log()).sum(dim=-1, keepdim=True)
+    #         self.gamma = gamma.detach().cpu().numpy()
+    #         self.alpha = alpha.detach().cpu().numpy()
+    #         return ll.mean()
+    #
+    #     else:
+    #         x = torch.zeros_like(inputs)
+    #         for i_col in range(inputs.shape[1]):
+    #             h = self.joiner(x, cond_inputs)
+    #             gamma, alpha, beta = self.trunk(h).chunk(2, 1)
+    #             gamma = torch.sigmoid(gamma)
+    #             z = Bernoulli(p=gamma).sample().cuda()
+    #             nonzeros = inputs[:, i_col] * torch.exp(beta[:, i_col]) + alpha[:, i_col]
+    #             x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+    #         return x
 
 
 
