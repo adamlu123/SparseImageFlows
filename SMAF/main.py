@@ -61,7 +61,7 @@ parser.add_argument(
 parser.add_argument(
     '--num-blocks',
     type=int,
-    default=1,
+    default=5,
     help='number of invertible blocks (default: 5)')
 parser.add_argument(
     '--seed', type=int, default=1, help='random seed (default: 1)')
@@ -225,10 +225,15 @@ elif args.flow == 'maf-split-glow':
             fnn.InvertibleMM(num_inputs)
         ]
 elif args.flow == 'mixture-maf':
-    for _ in range(args.num_blocks):
-        modules += [
-            fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='sigmoid'),
-        ]
+
+    modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs, act='sigmoid')]
+    # for _ in range(args.num_blocks):
+    #     modules += [
+    #         fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='relu'),
+    #         fnn.BatchNormFlow(num_inputs),
+    #         fnn.Reverse(num_inputs)
+    #     ]
+    print('flow structure: {}'.format(modules))
 
 
 model = fnn.FlowSequential(*modules)
@@ -268,9 +273,15 @@ def train(epoch):
         loss = -model.log_probs(data).mean()
         gamma = model._modules['0'].gamma
         alpha = model._modules['0'].alpha
+        log_std = model._modules['0'].log_std
+        u = model.u
+        log_jacob = model.log_jacob
         if batch_idx % args.log_interval == 0:
             print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
             print('alpha min:{}, alpha max:{}, alpha mean:{}'.format(alpha.min(), alpha.max(), alpha.mean()))
+            print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
+            print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
+            print('log_jacob min:{}, max:{}, mean:{}'.format(log_jacob.min(), log_jacob.max(), log_jacob.mean()))
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
@@ -339,32 +350,12 @@ for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
     if epoch % 5 == 0:
+        model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.sample(num_samples=args.batch_size)
+        samples = model.sample(num_samples=1000)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
-        with open(args.result_dir + '/img_sample_{}.pkl'.format(epoch), 'wb') as f:
+        with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
             pkl.dump(samples.tolist(), f)
 
-
-    # validation_loss = validate(epoch, model, valid_loader)
-
-    # if epoch - best_validation_epoch >= 30:
-    #     break
-
-    # if validation_loss < best_validation_loss:
-    #     best_validation_epoch = epoch
-    #     best_validation_loss = validation_loss
-    #     best_model = copy.deepcopy(model)
-
-    # print(
-    #     'Best validation at epoch {}: Average Log Likelihood in nats: {:.4f}'.
-    #         format(best_validation_epoch, -best_validation_loss))
-
-    # if args.dataset == 'MOONS' and epoch % 10 == 0:
-    #     utils.save_moons_plot(epoch, model, dataset)
-    # elif args.dataset == 'MNIST' and epoch % 1 == 0:
-    #     utils.save_images(epoch, model, args.cond)
-
-# validate(best_validation_epoch, best_model, test_loader, prefix='Test')
