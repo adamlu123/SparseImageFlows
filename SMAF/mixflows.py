@@ -99,6 +99,7 @@ class MADE(nn.Module):
             for i_col in range(inputs.shape[1]):
                 h = self.joiner(x, cond_inputs)
                 m, a = self.trunk(h).chunk(2, 1)
+                m, a = m.detach(), a.detach()
                 x[:, i_col] = inputs[:, i_col] * torch.exp(
                     a[:, i_col]) + m[:, i_col]
             return x  #, -a.sum(-1, keepdim=True)
@@ -238,7 +239,7 @@ class MixtureNormalMADE(nn.Module):
                 h = self.joiner(x, cond_inputs)
                 gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                 gamma = torch.sigmoid(gamma[:, i_col])
-                z = Bernoulli(probs=gamma).sample()  #.cuda()
+                z = Bernoulli(probs=gamma).sample()  # .cuda()
                 nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
                 x[:, i_col] = torch.where(z > 0, nonzeros.clamp(min=0).detach(), torch.zeros_like(nonzeros).detach())
             return x   #, -log_std.sum(-1, keepdim=True)
@@ -305,7 +306,7 @@ class FlowSequential(nn.Sequential):
         else:
             for module in reversed(self._modules.values()):
                 inputs = module(inputs, cond_inputs, mode)
-                return inputs
+            return inputs
 
     def log_probs(self, inputs):
         if isinstance(self._modules['0'], MixtureGammaMADE):

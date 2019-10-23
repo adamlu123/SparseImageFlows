@@ -38,7 +38,7 @@ parser.add_argument(
 parser.add_argument(
     '--epochs',
     type=int,
-    default=1000,
+    default=150,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
     '--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
@@ -61,7 +61,7 @@ parser.add_argument(
 parser.add_argument(
     '--num-blocks',
     type=int,
-    default=1,
+    default=2,
     help='number of invertible blocks (default: 5)')
 parser.add_argument(
     '--seed', type=int, default=1, help='random seed (default: 1)')
