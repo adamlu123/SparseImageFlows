@@ -92,7 +92,7 @@ class MADE(nn.Module):
             h = self.joiner(inputs, cond_inputs)
             m, a = self.trunk(h).chunk(2, 1)
             u = (inputs - m) * torch.exp(-a)
-            return u, -a.sum(-1, keepdim=True)
+            return u, -a  #.sum(-1, keepdim=True)
 
         else:
             x = torch.zeros_like(inputs)
@@ -101,7 +101,7 @@ class MADE(nn.Module):
                 m, a = self.trunk(h).chunk(2, 1)
                 x[:, i_col] = inputs[:, i_col] * torch.exp(
                     a[:, i_col]) + m[:, i_col]
-            return x, -a.sum(-1, keepdim=True)
+            return x  #, -a.sum(-1, keepdim=True)
 
 
 class MixtureGammaMADE(nn.Module):
@@ -220,16 +220,16 @@ class MixtureNormalMADE(nn.Module):
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
-
-            ll = torch.where(inputs > 0,
-                             gamma.log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-                             (1-gamma).log()).sum(dim=-1, keepdim=True)
+            #
+            # ll = torch.where(inputs > 0,
+            #                  gamma.log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+            #                  (1-gamma).log()).sum(dim=-1, keepdim=True)
 
             self.gamma = gamma.detach().cpu().numpy()
             self.alpha = mu.detach().cpu().numpy()
             self.log_std = log_std.detach().cpu().numpy()
 
-            return u, -log_std.sum(-1, keepdim=True), ll  # output gamma to compute ll
+            return u, -log_std, gamma  # output gamma to compute ll
 
         else:
             x = torch.zeros_like(inputs)
@@ -286,7 +286,7 @@ class FlowSequential(nn.Sequential):
         self.num_inputs = inputs.size(-1)
 
         if logdets is None:
-            logdets = torch.zeros(inputs.size(0), 1, device=inputs.device)
+            logdets = torch.zeros(inputs.size(0), 625, device=inputs.device)
 
         assert mode in ['direct', 'inverse']
         if mode == 'direct':
@@ -296,13 +296,13 @@ class FlowSequential(nn.Sequential):
                     logdets += logdet
                     return logdets
                 elif isinstance(module, MixtureNormalMADE):
-                    inputs, logdet, ll = module(inputs, cond_inputs, mode)
+                    inputs, logdet, gamma = module(inputs, cond_inputs, mode)
                     logdets += logdet
                 elif isinstance(module, MADE):
                     inputs, logdet = module(inputs, cond_inputs, mode)
                     logdets += logdet
-            return inputs, logdets, ll
-        else:  # TODO: think about whether reverse needs adjustment
+            return inputs, logdets, gamma
+        else:
             for module in reversed(self._modules.values()):
                 inputs = module(inputs, cond_inputs, mode)
                 return inputs
@@ -312,15 +312,15 @@ class FlowSequential(nn.Sequential):
             log_probs = self(inputs)
             return (log_probs).sum(-1, keepdim=True)
         else:
-            u, log_jacob, ll = self(inputs)
+            u, log_jacob, gamma = self(inputs)
             self.log_jacob = log_jacob
             self.u = u
-            # log_probs = (-0.5 * u.pow(2) - 0.5 * math.log(2 * math.pi)).sum(
-            #     -1, keepdim=True)
-            # normal_log_prob = (log_probs + log_jacob).sum(-1, keepdim=True)
-            # ll = torch.where(inputs > 0,
-            #                  gamma.log() + normal_log_prob,
-            #                  (1-gamma).log()).sum(dim=-1, keepdim=True)
+
+            log_probs = (-0.5 * u ** 2 - 0.5 * math.log(2 * math.pi))  #.sum(-1, keepdim=True)
+            normal_log_prob = (log_probs + log_jacob)  #.sum(-1, keepdim=True)
+            ll = torch.where(inputs > 0,
+                             gamma.log() + normal_log_prob,
+                             (1-gamma).log()).sum(dim=-1, keepdim=True)
             return ll
 
 
@@ -376,8 +376,7 @@ class BatchNormFlow(nn.Module):
 
             x_hat = (inputs - mean) / var.sqrt()
             y = torch.exp(self.log_gamma) * x_hat + self.beta
-            return y, (self.log_gamma - 0.5 * torch.log(var)).sum(
-                -1, keepdim=True)
+            return y, (self.log_gamma - 0.5 * torch.log(var)) #.sum(-1, keepdim=True)
         else:
             if self.training:
                 mean = self.batch_mean
@@ -390,8 +389,7 @@ class BatchNormFlow(nn.Module):
 
             y = x_hat * var.sqrt() + mean
 
-            return y, (-self.log_gamma + 0.5 * torch.log(var)).sum(
-                -1, keepdim=True)
+            return y #, (-self.log_gamma + 0.5 * torch.log(var)).sum(-1, keepdim=True)
 
 class Reverse(nn.Module):
     """ An implementation of a reversing layer from
@@ -406,9 +404,7 @@ class Reverse(nn.Module):
 
     def forward(self, inputs, cond_inputs=None, mode='direct'):
         if mode == 'direct':
-            return inputs[:, self.perm], torch.zeros(
-                inputs.size(0), 1, device=inputs.device)
+            return inputs[:, self.perm], torch.zeros(inputs.size(0), 625, device=inputs.device)
         else:
-            return inputs[:, self.inv_perm], torch.zeros(
-                inputs.size(0), 1, device=inputs.device)
+            return inputs[:, self.inv_perm]  #, torch.zeros(inputs.size(0), 1, device=inputs.device)
 

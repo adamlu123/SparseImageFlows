@@ -61,7 +61,7 @@ parser.add_argument(
 parser.add_argument(
     '--num-blocks',
     type=int,
-    default=5,
+    default=1,
     help='number of invertible blocks (default: 5)')
 parser.add_argument(
     '--seed', type=int, default=1, help='random seed (default: 1)')
@@ -230,8 +230,8 @@ elif args.flow == 'mixture-maf':
     for _ in range(args.num_blocks):
         modules += [
             fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='relu'),
-            fnn.BatchNormFlow(num_inputs),
-            fnn.Reverse(num_inputs)
+            # fnn.BatchNormFlow(num_inputs),
+            # fnn.Reverse(num_inputs)
         ]
     print('flow structure: {}'.format(modules))
 
