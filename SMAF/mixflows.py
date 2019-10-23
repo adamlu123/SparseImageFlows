@@ -234,14 +234,15 @@ class MixtureNormalMADE(nn.Module):
 
         else:
             x = torch.zeros_like(inputs)
-
-            for i_col in range(inputs.shape[1]):
-                h = self.joiner(x, cond_inputs)
-                gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-                gamma = torch.sigmoid(gamma[:, i_col])
-                z = Bernoulli(probs=gamma).sample()  # .cuda()
-                nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
-                x[:, i_col] = torch.where(z > 0, nonzeros.clamp(min=0).detach(), torch.zeros_like(nonzeros).detach())
+            with torch.no_grad():
+                for i_col in range(inputs.shape[1]):
+                    h = self.joiner(x, cond_inputs)
+                    gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                    gamma = torch.sigmoid(gamma[:, i_col])
+                    z = Bernoulli(probs=gamma).sample()  # .cuda()
+                    nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
+                    # nonzeros = nonzeros.abs().detach()
+                    x[:, i_col] = torch.where(z > 0, nonzeros.clamp(min=0), torch.zeros_like(nonzeros))
             return x   #, -log_std.sum(-1, keepdim=True)
 
 
@@ -387,7 +388,6 @@ class BatchNormFlow(nn.Module):
                 var = self.running_var
 
             x_hat = (inputs - self.beta) / torch.exp(self.log_gamma)
-
             y = x_hat * var.sqrt() + mean
 
             return y #, (-self.log_gamma + 0.5 * torch.log(var)).sum(-1, keepdim=True)

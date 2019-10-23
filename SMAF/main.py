@@ -38,7 +38,7 @@ parser.add_argument(
 parser.add_argument(
     '--epochs',
     type=int,
-    default=150,
+    default=5000,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
     '--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
@@ -61,7 +61,7 @@ parser.add_argument(
 parser.add_argument(
     '--num-blocks',
     type=int,
-    default=2,
+    default=5,
     help='number of invertible blocks (default: 5)')
 parser.add_argument(
     '--seed', type=int, default=1, help='random seed (default: 1)')
@@ -227,12 +227,12 @@ elif args.flow == 'maf-split-glow':
 elif args.flow == 'mixture-maf':
 
     modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs, act='sigmoid')]
-    for _ in range(args.num_blocks):
-        modules += [
-            fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='relu'),
-            # fnn.BatchNormFlow(num_inputs),
-            # fnn.Reverse(num_inputs)
-        ]
+    # for _ in range(args.num_blocks):
+    #     modules += [
+    #         fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='tanh'),
+    #         # fnn.BatchNormFlow(num_inputs),
+    #         # fnn.Reverse(num_inputs)
+    #     ]
     print('flow structure: {}'.format(modules))
 
 
@@ -349,7 +349,7 @@ best_model = model
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 5 == 0:
+    if epoch % 50 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
