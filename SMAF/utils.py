@@ -87,7 +87,7 @@ def gamma_log_prob(concentration, rate, value):
     return logprob
 
 def normal_log_prob(mu, sd, value):
-    return np.log(1/np.sqrt(2*np.pi)) - sd.log() - (mu-value)**2/2*sd**2
+    return np.log(1/np.sqrt(2*np.pi)) - sd.log() - (mu-value)**2/(2*sd**2)
 
 
 

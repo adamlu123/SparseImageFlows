@@ -77,7 +77,7 @@ parser.add_argument(
     help='whether to use the Jet images in LAGAN paper')
 parser.add_argument(
         "--subset",
-        type=str, default='background',
+        type=str, default='signal',
         help="training on which subset"
     )
 parser.add_argument(
@@ -227,12 +227,12 @@ elif args.flow == 'maf-split-glow':
 elif args.flow == 'mixture-maf':
 
     modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs, act='sigmoid')]
-    # for _ in range(args.num_blocks):
-    #     modules += [
-    #         fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='relu'),
-    #         fnn.BatchNormFlow(num_inputs),
-    #         fnn.Reverse(num_inputs)
-    #     ]
+    for _ in range(args.num_blocks):
+        modules += [
+            fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='relu'),
+            fnn.BatchNormFlow(num_inputs),
+            fnn.Reverse(num_inputs)
+        ]
     print('flow structure: {}'.format(modules))
 
 

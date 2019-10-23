@@ -218,7 +218,6 @@ class MixtureNormalMADE(nn.Module):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-            log_std = log_std.clamp(min=-1)
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
 
