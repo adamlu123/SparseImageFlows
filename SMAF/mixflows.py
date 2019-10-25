@@ -221,16 +221,17 @@ class MixtureNormalMADE(nn.Module):
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
+            gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
             #
-            # ll = torch.where(inputs > 0,
-            #                  gamma.log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-            #                  (1-gamma).log()).sum(dim=-1, keepdim=True)
+            ll = torch.where(inputs > 0,
+                             gamma.log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+                             (1-gamma).log()).sum(dim=-1, keepdim=True)
 
             self.gamma = gamma.detach().cpu().numpy()
             self.alpha = mu.detach().cpu().numpy()
             self.log_std = log_std.detach().cpu().numpy()
 
-            return u, -log_std, gamma  # output gamma to compute ll
+            return u, -log_std, ll  # output gamma to compute ll
 
         else:
             x = torch.zeros_like(inputs)
@@ -242,7 +243,7 @@ class MixtureNormalMADE(nn.Module):
                     z = Bernoulli(probs=gamma).sample()  # .cuda()
                     nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
                     # nonzeros = nonzeros.abs().detach()
-                    x[:, i_col] = torch.where(z > 0, nonzeros.clamp(min=0), torch.zeros_like(nonzeros))
+                    x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
             return x   #, -log_std.sum(-1, keepdim=True)
 
 
@@ -314,15 +315,15 @@ class FlowSequential(nn.Sequential):
             log_probs = self(inputs)
             return (log_probs).sum(-1, keepdim=True)
         else:
-            u, log_jacob, gamma = self(inputs)
+            u, log_jacob, ll = self(inputs)
             self.log_jacob = log_jacob
             self.u = u
-
-            log_probs = (-0.5 * u ** 2 - 0.5 * math.log(2 * math.pi))  #.sum(-1, keepdim=True)
-            normal_log_prob = (log_probs + log_jacob)  #.sum(-1, keepdim=True)
-            ll = torch.where(inputs > 0,
-                             gamma.log() + normal_log_prob,
-                             (1-gamma).log()).sum(dim=-1, keepdim=True)
+            #
+            # log_probs = (-0.5 * u ** 2 - 0.5 * math.log(2 * math.pi))  #.sum(-1, keepdim=True)
+            # normal_log_prob = (log_probs + log_jacob)  #.sum(-1, keepdim=True)
+            # ll = torch.where(inputs > 0,
+            #                  gamma.log() + normal_log_prob,
+            #                  (1-gamma).log()).sum(dim=-1, keepdim=True)
             return ll
 
 

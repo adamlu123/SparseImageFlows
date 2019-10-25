@@ -56,7 +56,6 @@ def train(args, config, model, train_loader, optimizer, epoch, device, scheduler
 
 
 
-
 def test(args, config, model, epoch):
     model.eval()
     numsamples = 10000

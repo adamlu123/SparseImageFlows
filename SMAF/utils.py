@@ -156,3 +156,8 @@ class MarsagliaTsampler(nn.Module):
         # out = out[out>0]
         detached_gamma_alpha = self.alpha  #.detach()
         return processed_out, detached_gamma_alpha
+
+
+def get_psi(mu, std):
+    value = (-mu)/(std*np.sqrt(2))
+    return 0.5 * (1 + 2*torch.sigmoid(2.5*value)-1)
