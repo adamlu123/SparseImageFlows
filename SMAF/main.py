@@ -7,6 +7,9 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import pickle as pkl
 import time
 import numpy as np
+import utils
+from utils import load_data_LAGAN
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,8 +19,9 @@ from tqdm import tqdm
 # from tensorboardX import SummaryWriter
 import datasets
 import mixflows as fnn
-import utils
-from utils import load_data_LAGAN
+from scipy.stats import wasserstein_distance
+from Notebooks import plot_utils
+
 
 
 if sys.version_info < (3, 6):
@@ -289,73 +293,71 @@ def train(epoch):
         pbar.update(data.size(0))
         pbar.set_description('Train, Log likelihood in nats: {:.6f}'.format(
             -train_loss / (batch_idx + 1)))
-
+    pbar.close()
         # writer.add_scalar('training/loss', loss.item(), global_step)
         # global_step += 1
 
-    pbar.close()
-
-    # for module in model.modules():
-    #     if isinstance(module, fnn.BatchNormFlow):
-    #         module.momentum = 0
-    #
-    # if args.cond:
-    #     with torch.no_grad():
-    #         model(train_loader.dataset.tensors[0].to(data.device),
-    #               train_loader.dataset.tensors[1].to(data.device).float())
-    # else:
-    #     with torch.no_grad():
-    #         model(train_loader.dataset.tensors[0].to(data.device))
-    #
-    # for module in model.modules():
-    #     if isinstance(module, fnn.BatchNormFlow):
-    #         module.momentum = 1
 
 
-def validate(epoch, model, loader, prefix='Validation'):
-    # global global_step, writer
+# def validate(epoch, model, loader, prefix='Validation'):
+#     # global global_step, writer
+#
+#     model.eval()
+#     val_loss = 0
+#
+#     pbar = tqdm(total=len(loader.dataset))
+#     pbar.set_description('Eval')
+#     for batch_idx, data in enumerate(loader):
+#         if isinstance(data, list):
+#             if len(data) > 1:
+#                 cond_data = data[1].float()
+#                 cond_data = cond_data.to(device)
+#             else:
+#                 cond_data = None
+#
+#             data = data[0]
+#         data = data.to(device)
+#         with torch.no_grad():
+#             val_loss += -model.log_probs(data, cond_data).sum().item()  # sum up batch loss
+#         pbar.update(data.size(0))
+#         pbar.set_description('Val, Log likelihood in nats: {:.6f}'.format(
+#             -val_loss / pbar.n))
+#
+#     # writer.add_scalar('validation/LL', val_loss / len(loader.dataset), epoch)
+#
+#     pbar.close()
+#     return val_loss / len(loader.dataset)
 
-    model.eval()
-    val_loss = 0
-
-    pbar = tqdm(total=len(loader.dataset))
-    pbar.set_description('Eval')
-    for batch_idx, data in enumerate(loader):
-        if isinstance(data, list):
-            if len(data) > 1:
-                cond_data = data[1].float()
-                cond_data = cond_data.to(device)
-            else:
-                cond_data = None
-
-            data = data[0]
-        data = data.to(device)
-        with torch.no_grad():
-            val_loss += -model.log_probs(data, cond_data).sum().item()  # sum up batch loss
-        pbar.update(data.size(0))
-        pbar.set_description('Val, Log likelihood in nats: {:.6f}'.format(
-            -val_loss / pbar.n))
-
-    # writer.add_scalar('validation/LL', val_loss / len(loader.dataset), epoch)
-
-    pbar.close()
-    return val_loss / len(loader.dataset)
+def get_distance(image, samples):
+    samples[samples < 0] = 0  # -samples_bg[samples_bg<0]
+    pt_dist = wasserstein_distance(plot_utils.discrete_pt(image),
+                                plot_utils.discrete_pt(np.asarray(samples.tolist()).reshape(-1, 25, 25)))
+    mass_dist = wasserstein_distance(plot_utils.discrete_mass(image),
+                               plot_utils.discrete_mass(np.asarray(samples.tolist()).reshape(-1, 25, 25)))
+    print('Wasserstein distance Pt:', pt_dist)
+    print('Wasserstein distance Mass:', mass_dist)
+    return [pt_dist, mass_dist]
 
 
 best_validation_loss = float('inf')
 best_validation_epoch = 0
 best_model = model
+dist_list = []
 
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 50 == 0:
+    if epoch % 5 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
         samples = model.sample(num_samples=1000)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
-        with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
-            pkl.dump(samples.tolist(), f)
+
+        dist_list.append(get_distance(train_dataset.reshape(-1, 25, 25)[:1000], samples))
+
+        if epoch % 50 == 0:
+            with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
+                pkl.dump(samples.tolist(), f)
 

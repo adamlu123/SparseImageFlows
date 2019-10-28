@@ -212,6 +212,8 @@ class MixtureNormalMADE(nn.Module):
         self.trunk = nn.Sequential(act_func(),
                                    nn.MaskedLinear(num_hidden, num_hidden,
                                                    hidden_mask), act_func(),
+                                   nn.MaskedLinear(num_hidden, num_hidden,
+                                                   hidden_mask), act_func(),
                                    nn.MaskedLinear(num_hidden, num_inputs * 3,
                                                    output_mask))
 

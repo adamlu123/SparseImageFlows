@@ -2,6 +2,9 @@ import torch
 from torch.distributions import Normal, Bernoulli
 import h5py
 import numpy as np
+from scipy.stats import wasserstein_distance
+from Notebooks import plot_utils
+
 
 def safe_log(z):
     return torch.log(z + 1e-7)
@@ -99,3 +102,35 @@ def load_data_LAGAN(subset='signal'):
     elif subset == 'All':
         print('return all')
         return image
+
+
+def load_LAGAN(num=10000, signal=1):
+    img_dir = "/baldig/physicsprojects/lagan"
+    with h5py.File(img_dir + '/lagan-jet-images.hdf5', 'r') as f:
+        image = np.asarray(f['image'][:num, :, :])
+        real_labels = np.asarray(f['signal'][:num])
+
+    real_imagebg = image[real_labels == 0]
+    real_imagesg = image[real_labels == 1]
+    print(real_imagebg.shape, real_imagesg.shape)
+
+    if signal == 0:
+        print('return background')
+        return real_imagebg
+    elif signal == 1:
+        print('return signal')
+        return real_imagesg
+    elif signal == 'All':
+        print('return all')
+        return image
+
+
+def get_distance(image, samples):
+    # image = load_LAGAN(num=10000, signal=1)[:1000]
+    samples[samples < 0] = 0  # -samples_bg[samples_bg<0]
+    print('Wasserstein distance Pt:',
+          wasserstein_distance(plot_utils.discrete_pt(image),
+                               plot_utils.discrete_pt(np.asarray(samples.tolist()).reshape(-1, 25, 25))))
+    print('Wasserstein distance Mass:',
+          wasserstein_distance(plot_utils.discrete_mass(image),
+                               plot_utils.discrete_mass(np.asarray(samples.tolist()).reshape(-1, 25, 25))))
