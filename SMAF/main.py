@@ -275,17 +275,17 @@ def train(epoch):
         data = data.to(device)
         optimizer.zero_grad()
         loss = -model.log_probs(data).mean()
-        gamma = model._modules['0'].gamma
-        alpha = model._modules['0'].alpha
-        log_std = model._modules['0'].log_std
-        u = model.u
-        log_jacob = model.log_jacob
-        if batch_idx % args.log_interval == 0:
-            print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
-            print('alpha min:{}, alpha max:{}, alpha mean:{}'.format(alpha.min(), alpha.max(), alpha.mean()))
-            print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
-            print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
-            print('log_jacob min:{}, max:{}, mean:{}'.format(log_jacob.min(), log_jacob.max(), log_jacob.mean()))
+        # gamma = model._modules['0'].gamma
+        # alpha = model._modules['0'].alpha
+        # log_std = model._modules['0'].log_std
+        # u = model.u
+        # log_jacob = model.log_jacob
+        # if batch_idx % args.log_interval == 0:
+        #     print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
+        #     print('alpha min:{}, alpha max:{}, alpha mean:{}'.format(alpha.min(), alpha.max(), alpha.mean()))
+        #     print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
+        #     print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
+        #     print('log_jacob min:{}, max:{}, mean:{}'.format(log_jacob.min(), log_jacob.max(), log_jacob.mean()))
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
@@ -358,6 +358,8 @@ for epoch in range(args.epochs):
         dist_list.append(get_distance(train_dataset.reshape(-1, 25, 25)[:1000], samples))
 
         if epoch % 50 == 0:
+            distance = np.asarray(dist_list)
+            print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
             with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
 
