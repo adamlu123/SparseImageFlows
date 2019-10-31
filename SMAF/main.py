@@ -314,7 +314,7 @@ def train(epoch):
 #                 cond_data = cond_data.to(device)
 #             else:
 #                 cond_data = None
-#
+#da
 #             data = data[0]
 #         data = data.to(device)
 #         with torch.no_grad():
