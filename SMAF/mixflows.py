@@ -140,7 +140,7 @@ class MixtureGammaMADE(nn.Module):
             h = self.joiner(inputs, cond_inputs)
             gamma, alpha = self.trunk(h).chunk(2, 1)
             gamma = torch.sigmoid(gamma)
-            alpha = torch.exp(alpha) #+ 1e-2
+            alpha = torch.exp(alpha)  #+ 1e-2
 
             beta = torch.ones_like(alpha)  # TODO: can change beta to other value
             ll = torch.where(inputs > 0,

@@ -3,12 +3,12 @@ import copy
 import math
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import pickle as pkl
 import time
 import numpy as np
 import utils
-from utils import load_data_LAGAN
+from utils import load_data_LAGAN, load_jet_image
 
 import torch
 import torch.nn as nn
@@ -85,7 +85,7 @@ parser.add_argument(
         help="training on which subset"
     )
 parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_smaf',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_peter_smaf',
         help="result directory"
     )
 
@@ -104,10 +104,12 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    train_dataset = load_data_LAGAN(subset=args.subset)
-    train_dataset = train_dataset.reshape(-1, 625)
-    # log_img = np.zeros_like(raw_img)
-    # log_img[raw_img>0] = np.log(raw_img[raw_img>0])
+    # train_dataset = load_data_LAGAN(subset=args.subset)
+    # train_dataset = train_dataset.reshape(-1, 625)
+
+    train_dataset = load_jet_image(num=50000, signal=1)
+    train_dataset = train_dataset.reshape(-1, 1024)
+
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
 else:
@@ -298,35 +300,6 @@ def train(epoch):
         # global_step += 1
 
 
-
-# def validate(epoch, model, loader, prefix='Validation'):
-#     # global global_step, writer
-#
-#     model.eval()
-#     val_loss = 0
-#
-#     pbar = tqdm(total=len(loader.dataset))
-#     pbar.set_description('Eval')
-#     for batch_idx, data in enumerate(loader):
-#         if isinstance(data, list):
-#             if len(data) > 1:
-#                 cond_data = data[1].float()
-#                 cond_data = cond_data.to(device)
-#             else:
-#                 cond_data = None
-#da
-#             data = data[0]
-#         data = data.to(device)
-#         with torch.no_grad():
-#             val_loss += -model.log_probs(data, cond_data).sum().item()  # sum up batch loss
-#         pbar.update(data.size(0))
-#         pbar.set_description('Val, Log likelihood in nats: {:.6f}'.format(
-#             -val_loss / pbar.n))
-#
-#     # writer.add_scalar('validation/LL', val_loss / len(loader.dataset), epoch)
-#
-#     pbar.close()
-#     return val_loss / len(loader.dataset)
 
 def get_distance(image, samples):
     samples[samples < 0] = 0  # -samples_bg[samples_bg<0]
