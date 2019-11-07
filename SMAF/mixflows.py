@@ -33,14 +33,16 @@ class ElementWiseLinear(nn.Module):
         super(ElementWiseLinear, self).__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.bias = nn.Parameter(torch.ones(dim))
-
+        self.conv = nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1)
     def forward(self, coordinate_map):   # TODO: determine whether to use polar coordinate or Cartisan coordinate for position
+        coordinate_map = self.conv(coordinate_map)
         return coordinate_map * self.weight + self.bias
 
 
 class AffineTransform(nn.Module):
     """
     Affine transform where weight and bias are output by a function of pixel position (call ElementWiseLinear)
+    TODO: think about whether we need to use two separate ElementWiseLinear to output weight and bias.
     """
     def __init__(self):
         super(AffineTransform, self).__init__()
@@ -53,18 +55,22 @@ class AffineTransform(nn.Module):
 
 
 class ParameterFilter(nn.Module):
+    """
+    A wrapper for AffineTransform to deal with gamma, mu, and log_std together.
+    """
     def __init__(self):
         super(ParameterFilter, self).__init__()
         self.AffineTransform_gamma = AffineTransform()
         self.AffineTransform_mu = AffineTransform()
         self.AffineTransform_logstd = AffineTransform()
 
-    def forward(self, gamma, mu, log_std, coordinate_map):
+    def forward(self, gamma, mu, log_std):
+        coordinate_map = (torch.stack((torch.tensor(np.stack([np.arange(0, 25)] * 25)).t(),
+                                      torch.tensor(np.stack([np.arange(0, 25)] * 25)))) - 12).view(2, 625)
         gamma = self.AffineTransform_gamma(gamma, coordinate_map)
         mu = self.AffineTransform_gamma(mu, coordinate_map)
         log_std = self.AffineTransform_gamma(log_std, coordinate_map)
         return gamma, mu, log_std
-
 
 
 

@@ -78,6 +78,26 @@ def load_data_LAGAN(subset='signal'):
         print('return all')
         return image
 
+def load_jet_image(num=10000, signal=0):
+    img_dir = '/baldig/physicsprojects/jetvision/data/download4/datasets/test_no_pile_5000000.h5'
+    with h5py.File(img_dir, 'r') as f:
+        image = np.asarray(f['features'][:num, :, :])
+        real_labels = np.asarray(f['targets'][:num])
+
+    real_imagebg = image[real_labels == 0]
+    real_imagesg = image[real_labels == 1]
+    print(real_imagebg.shape, real_imagesg.shape)
+
+    if signal == 0:
+        print('return background')
+        return real_imagebg
+    elif signal == 1:
+        print('return signal')
+        return real_imagesg
+    elif signal == 'All':
+        print('return all')
+        return image
+
 
 def gamma_log_prob(concentration, rate, value):
     value = torch.where(value > 0, value, value+1e-4)  # to avoid nan in torch.log(val)

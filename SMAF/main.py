@@ -104,11 +104,11 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    # train_dataset = load_data_LAGAN(subset=args.subset)
-    # train_dataset = train_dataset.reshape(-1, 625)
+    train_dataset = load_data_LAGAN(subset=args.subset)
+    train_dataset = train_dataset.reshape(-1, 625)
 
-    train_dataset = load_jet_image(num=50000, signal=1)
-    train_dataset = train_dataset.reshape(-1, 1024)
+    # train_dataset = load_jet_image(num=50000, signal=1)
+    # train_dataset = train_dataset.reshape(-1, 1024)
 
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
