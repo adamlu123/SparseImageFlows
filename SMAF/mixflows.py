@@ -28,6 +28,46 @@ def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     return (out_degrees.unsqueeze(-1) >= in_degrees.unsqueeze(0)).float()
 
 
+class ElementWiseLinear(nn.Module):
+    def __init__(self, dim):
+        super(ElementWiseLinear, self).__init__()
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.bias = nn.Parameter(torch.ones(dim))
+
+    def forward(self, coordinate_map):   # TODO: determine whether to use polar coordinate or Cartisan coordinate for position
+        return coordinate_map * self.weight + self.bias
+
+
+class AffineTransform(nn.Module):
+    """
+    Affine transform where weight and bias are output by a function of pixel position (call ElementWiseLinear)
+    """
+    def __init__(self):
+        super(AffineTransform, self).__init__()
+        self.ElementWiseLinear_weight = ElementWiseLinear(dim=625)
+        self.ElementWiseLinear_bias = ElementWiseLinear(dim=625)
+    def forward(self, x, coordinate_map):
+        weight = self.ElementWiseLinear_weight(coordinate_map)
+        bias = self.ElementWiseLinear_weight(coordinate_map)
+        return x * weight + bias
+
+
+class ParameterFilter(nn.Module):
+    def __init__(self):
+        super(ParameterFilter, self).__init__()
+        self.AffineTransform_gamma = AffineTransform()
+        self.AffineTransform_mu = AffineTransform()
+        self.AffineTransform_logstd = AffineTransform()
+
+    def forward(self, gamma, mu, log_std, coordinate_map):
+        gamma = self.AffineTransform_gamma(gamma, coordinate_map)
+        mu = self.AffineTransform_gamma(mu, coordinate_map)
+        log_std = self.AffineTransform_gamma(log_std, coordinate_map)
+        return gamma, mu, log_std
+
+
+
+
 class MaskedLinear(nn.Module):
     def __init__(self,
                  in_features,
@@ -220,9 +260,13 @@ class MixtureNormalMADE(nn.Module):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+            gamma, mu, log_std = ParameterFilter(gamma, mu, log_std)
+
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
             gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+
+
             #
             ll = torch.where(inputs > 0,
                              gamma.log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
