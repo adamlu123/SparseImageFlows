@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from torch.distributions import Gamma, Bernoulli
 import utils
 
+
 def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     """
     mask_type: input | None | output
@@ -31,11 +32,14 @@ def get_mask(in_features, out_features, in_flow_features, mask_type=None):
 class ElementWiseLinear(nn.Module):
     def __init__(self, dim):
         super(ElementWiseLinear, self).__init__()
-        self.weight = nn.Parameter(torch.ones(dim))
-        self.bias = nn.Parameter(torch.ones(dim))
+        # init = torch.nn.init.uniform(torch.empty(25, 25)).view(-1)
+        self.weight = nn.Parameter(torch.zeros(dim))
+        self.bias = nn.Parameter(torch.zeros(dim))
         self.conv = nn.Conv1d(in_channels=2, out_channels=1, kernel_size=1)
-    def forward(self, coordinate_map):   # TODO: determine whether to use polar coordinate or Cartisan coordinate for position
-        coordinate_map = self.conv(coordinate_map)
+
+    def forward(self,
+                coordinate_map):  # TODO: determine whether to use polar coordinate or Cartisan coordinate for position
+        coordinate_map = self.conv(coordinate_map).squeeze()
         return coordinate_map * self.weight + self.bias
 
 
@@ -44,34 +48,37 @@ class AffineTransform(nn.Module):
     Affine transform where weight and bias are output by a function of pixel position (call ElementWiseLinear)
     TODO: think about whether we need to use two separate ElementWiseLinear to output weight and bias.
     """
+
     def __init__(self):
         super(AffineTransform, self).__init__()
         self.ElementWiseLinear_weight = ElementWiseLinear(dim=625)
         self.ElementWiseLinear_bias = ElementWiseLinear(dim=625)
+
     def forward(self, x, coordinate_map):
         weight = self.ElementWiseLinear_weight(coordinate_map)
         bias = self.ElementWiseLinear_weight(coordinate_map)
-        return x * weight + bias
+        return x + bias
 
 
 class ParameterFilter(nn.Module):
     """
     A wrapper for AffineTransform to deal with gamma, mu, and log_std together.
     """
+
     def __init__(self):
         super(ParameterFilter, self).__init__()
         self.AffineTransform_gamma = AffineTransform()
         self.AffineTransform_mu = AffineTransform()
         self.AffineTransform_logstd = AffineTransform()
+        self.coordinate_map = (torch.stack((torch.tensor(np.stack([np.arange(0, 25.)] * 25), dtype=torch.float).t(),
+                                            torch.tensor(np.stack([np.arange(0, 25.)] * 25),
+                                                         dtype=torch.float)))/12 - 1).view(1, 2, 625).cuda()
 
     def forward(self, gamma, mu, log_std):
-        coordinate_map = (torch.stack((torch.tensor(np.stack([np.arange(0, 25)] * 25)).t(),
-                                      torch.tensor(np.stack([np.arange(0, 25)] * 25)))) - 12).view(2, 625)
-        gamma = self.AffineTransform_gamma(gamma, coordinate_map)
-        mu = self.AffineTransform_gamma(mu, coordinate_map)
-        log_std = self.AffineTransform_gamma(log_std, coordinate_map)
+        gamma = self.AffineTransform_gamma(gamma, self.coordinate_map)
+        mu = self.AffineTransform_mu(mu, self.coordinate_map)
+        log_std = self.AffineTransform_logstd(log_std, self.coordinate_map)
         return gamma, mu, log_std
-
 
 
 class MaskedLinear(nn.Module):
@@ -98,7 +105,6 @@ class MaskedLinear(nn.Module):
 
 
 nn.MaskedLinear = MaskedLinear
-
 
 
 class MADE(nn.Module):
@@ -137,7 +143,7 @@ class MADE(nn.Module):
             h = self.joiner(inputs, cond_inputs)
             m, a = self.trunk(h).chunk(2, 1)
             u = (inputs - m) * torch.exp(-a)
-            return u, -a  #.sum(-1, keepdim=True)
+            return u, -a  # .sum(-1, keepdim=True)
 
         else:
             x = torch.zeros_like(inputs)
@@ -147,7 +153,7 @@ class MADE(nn.Module):
                 m, a = m.detach(), a.detach()
                 x[:, i_col] = inputs[:, i_col] * torch.exp(
                     a[:, i_col]) + m[:, i_col]
-            return x  #, -a.sum(-1, keepdim=True)
+            return x  # , -a.sum(-1, keepdim=True)
 
 
 class MixtureGammaMADE(nn.Module):
@@ -180,18 +186,19 @@ class MixtureGammaMADE(nn.Module):
                                                    hidden_mask), act_func(),
                                    nn.MaskedLinear(num_hidden, num_inputs * 2,
                                                    output_mask))
+
     #
     def forward(self, inputs, cond_inputs=None, mode='direct'):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, alpha = self.trunk(h).chunk(2, 1)
             gamma = torch.sigmoid(gamma)
-            alpha = torch.exp(alpha)  #+ 1e-2
+            alpha = torch.exp(alpha)  # + 1e-2
 
             beta = torch.ones_like(alpha)  # TODO: can change beta to other value
             ll = torch.where(inputs > 0,
                              gamma.log() + utils.gamma_log_prob(alpha, beta, inputs),
-                             (1-gamma).log()).sum(dim=-1, keepdim=True)
+                             (1 - gamma).log()).sum(dim=-1, keepdim=True)
             self.gamma = gamma.detach().cpu().numpy()
             self.alpha = alpha.detach().cpu().numpy()
             return ll
@@ -203,7 +210,8 @@ class MixtureGammaMADE(nn.Module):
                 gamma, alpha = self.trunk(h).chunk(2, 1)
                 gamma = torch.sigmoid(gamma)
                 alpha = torch.exp(alpha)
-                x[:, i_col] = utils.MTsample(gamma=gamma[:, i_col], alpha=alpha[:, i_col], beta=1)  #inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
+                x[:, i_col] = utils.MTsample(gamma=gamma[:, i_col], alpha=alpha[:, i_col],
+                                             beta=1)  # inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
             return x
 
     # def forward(self, inputs, cond_inputs=None, mode='direct'):
@@ -229,6 +237,7 @@ class MixtureGammaMADE(nn.Module):
     #             nonzeros = inputs[:, i_col] * torch.exp(beta[:, i_col]) + alpha[:, i_col]
     #             x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
     #         return x
+
 
 class MixtureNormalMADE(nn.Module):
     """ An implementation of mxiture of Dirac delta and normal: MADE structure
@@ -262,21 +271,22 @@ class MixtureNormalMADE(nn.Module):
                                    nn.MaskedLinear(num_hidden, num_inputs * 3,
                                                    output_mask))
 
+        self.ParameterFilter = ParameterFilter()
+
     def forward(self, inputs, cond_inputs=None, mode='direct'):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-            gamma, mu, log_std = ParameterFilter(gamma, mu, log_std)
+            # gamma, mu, log_std = self.ParameterFilter(gamma, mu, log_std)
 
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
             gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
 
-
             #
             ll = torch.where(inputs > 0,
                              gamma.log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-                             (1-gamma).log()).sum(dim=-1, keepdim=True)
+                             (1 - gamma).log()).sum(dim=-1, keepdim=True)
 
             self.gamma = gamma.detach().cpu().numpy()
             self.alpha = mu.detach().cpu().numpy()
@@ -295,7 +305,7 @@ class MixtureNormalMADE(nn.Module):
                     nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
                     # nonzeros = nonzeros.abs().detach()
                     x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-            return x   #, -log_std.sum(-1, keepdim=True)
+            return x  # , -log_std.sum(-1, keepdim=True)
 
 
 class Sigmoid(nn.Module):
@@ -324,7 +334,6 @@ class Logit(Sigmoid):
             return super(Logit, self).forward(inputs, 'direct')
 
 
-
 class FlowSequential(nn.Sequential):
     """ A sequential container for Mixture of Dirac delta mass and Gamma/Normal density flows. (one layer)
     In addition to a forward pass it implements a backward pass and
@@ -340,7 +349,7 @@ class FlowSequential(nn.Sequential):
         self.num_inputs = inputs.size(-1)
 
         if logdets is None:
-            logdets = torch.zeros(inputs.size(0), 625, device=inputs.device)
+            logdets = torch.zeros(inputs.size(0), 1024, device=inputs.device)
 
         assert mode in ['direct', 'inverse']
         if mode == 'direct':
@@ -377,9 +386,7 @@ class FlowSequential(nn.Sequential):
             #                  (1-gamma).log()).sum(dim=-1, keepdim=True)
             return ll
 
-
-    def sample(self, num_samples=None, noise=None, cond_inputs=None):
-        input_size = 625
+    def sample(self, num_samples=None, noise=None, cond_inputs=None, input_size=625):
         if noise is None:
             noise = torch.Tensor(num_samples, input_size).normal_()
         device = next(self.parameters()).device
@@ -430,7 +437,7 @@ class BatchNormFlow(nn.Module):
 
             x_hat = (inputs - mean) / var.sqrt()
             y = torch.exp(self.log_gamma) * x_hat + self.beta
-            return y, (self.log_gamma - 0.5 * torch.log(var)) #.sum(-1, keepdim=True)
+            return y, (self.log_gamma - 0.5 * torch.log(var))  # .sum(-1, keepdim=True)
         else:
             if self.training:
                 mean = self.batch_mean
@@ -442,7 +449,8 @@ class BatchNormFlow(nn.Module):
             x_hat = (inputs - self.beta) / torch.exp(self.log_gamma)
             y = x_hat * var.sqrt() + mean
 
-            return y #, (-self.log_gamma + 0.5 * torch.log(var)).sum(-1, keepdim=True)
+            return y  # , (-self.log_gamma + 0.5 * torch.log(var)).sum(-1, keepdim=True)
+
 
 class Reverse(nn.Module):
     """ An implementation of a reversing layer from
@@ -459,5 +467,4 @@ class Reverse(nn.Module):
         if mode == 'direct':
             return inputs[:, self.perm], torch.zeros(inputs.size(0), 625, device=inputs.device)
         else:
-            return inputs[:, self.inv_perm]  #, torch.zeros(inputs.size(0), 1, device=inputs.device)
-
+            return inputs[:, self.inv_perm]  # , torch.zeros(inputs.size(0), 1, device=inputs.device)
