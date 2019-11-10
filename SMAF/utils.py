@@ -181,3 +181,35 @@ class MarsagliaTsampler(nn.Module):
 def get_psi(mu, std):
     value = (-mu)/(std*np.sqrt(2))
     return 0.5 * (1 + 2*torch.sigmoid(2.5*value)-1)
+
+
+def spiral_perm(A, from_center=True):
+    """
+
+    :param A: a square matrix of index
+    :param from_center: the order of spiral
+    :return: a list of numbers corresponding to spiral permutation
+    """
+    index_list = []
+    num_cols = A.shape[0]
+    for row in range(num_cols):
+        index_list = index_list + list(A[row, row:num_cols - row])
+        index_list = index_list + list(A[row + 1:num_cols - row, num_cols - row - 1])
+
+        index_list = index_list + list(A[num_cols - row - 1, row:len(A) - row - 1][::-1])
+        index_list = index_list + list(A[row + 1:len(A) - row - 1, row][::-1])
+    if from_center:
+        index_list = index_list[::-1]
+    return index_list
+
+def vector_spiral_perm(data, dim):
+    """
+    wrapper function for spiral_perm
+    :param data:
+    :param dim:
+    :return: permutated data matrix
+    """
+    A = np.arange(data.shape[1]).reshape(dim,dim)
+    perm_spiral = spiral_perm(A)
+    return data[:, perm_spiral]
+

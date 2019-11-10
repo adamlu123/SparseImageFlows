@@ -349,7 +349,7 @@ class FlowSequential(nn.Sequential):
         self.num_inputs = inputs.size(-1)
 
         if logdets is None:
-            logdets = torch.zeros(inputs.size(0), 1024, device=inputs.device)
+            logdets = torch.zeros(inputs.size(0), 625, device=inputs.device)
 
         assert mode in ['direct', 'inverse']
         if mode == 'direct':
@@ -387,6 +387,7 @@ class FlowSequential(nn.Sequential):
             return ll
 
     def sample(self, num_samples=None, noise=None, cond_inputs=None, input_size=625):
+        # input_size =
         if noise is None:
             noise = torch.Tensor(num_samples, input_size).normal_()
         device = next(self.parameters()).device

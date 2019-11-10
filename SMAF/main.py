@@ -85,7 +85,7 @@ parser.add_argument(
         help="training on which subset"
     )
 parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_peter_smaf',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_smaf',
         help="result directory"
     )
 
@@ -104,11 +104,12 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    # train_dataset = load_data_LAGAN(subset=args.subset)
-    # train_dataset = train_dataset.reshape(-1, 625)
+    train_dataset = load_data_LAGAN(subset=args.subset)
+    train_dataset = train_dataset.reshape(-1, 625)
 
-    train_dataset = load_jet_image(num=50000, signal=1)
-    train_dataset = train_dataset.reshape(-1, 1024)
+    # train_dataset = load_jet_image(num=50000, signal=1)
+    # train_dataset = train_dataset.reshape(-1, 1024)
+    utils.vector_spiral_perm(train_dataset, dim=25)
 
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
@@ -324,16 +325,19 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.sample(num_samples=1000, input_size=1024)
+        samples = model.sample(num_samples=1000, input_size=625)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        # dist_list.append(get_distance(train_dataset.reshape(-1, 25, 25)[:1000], samples))
+        dist = get_distance(train_dataset.reshape(-1, 25, 25)[:1000], samples)
+        with open(args.result_dir + '/distance_list.txt', 'a') as f:
+            f.write(str(dist) + ', \n')
+
 
         if epoch % 50 == 0:
-            # distance = np.asarray(dist_list)
+            distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            torch.save(model.state_dict(), args.result_dir + '/MixNorm_img_sample_{}.py'.format(epoch))
+            torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
             with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')
