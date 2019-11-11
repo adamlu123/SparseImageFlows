@@ -85,7 +85,7 @@ parser.add_argument(
         help="training on which subset"
     )
 parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_smaf',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_peter_smaf',
         help="result directory"
     )
 

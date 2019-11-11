@@ -199,7 +199,7 @@ def spiral_perm(A, from_center=True):
         index_list = index_list + list(A[num_cols - row - 1, row:len(A) - row - 1][::-1])
         index_list = index_list + list(A[row + 1:len(A) - row - 1, row][::-1])
     if from_center:
-        index_list = index_list[::-1]
+        index_list = index_list  #[::-1]
     return index_list
 
 def vector_spiral_perm(data, dim):

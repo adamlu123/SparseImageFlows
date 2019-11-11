@@ -271,7 +271,7 @@ class MixtureNormalMADE(nn.Module):
                                    nn.MaskedLinear(num_hidden, num_inputs * 3,
                                                    output_mask))
 
-        self.ParameterFilter = ParameterFilter()
+        # self.ParameterFilter = ParameterFilter()
 
     def forward(self, inputs, cond_inputs=None, mode='direct'):
         if mode == 'direct':
@@ -281,12 +281,14 @@ class MixtureNormalMADE(nn.Module):
 
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
-            gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+            # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+            # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
+            gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
 
             #
             ll = torch.where(inputs > 0,
-                             gamma.log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-                             (1 - gamma).log()).sum(dim=-1, keepdim=True)
+                             (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             self.gamma = gamma.detach().cpu().numpy()
             self.alpha = mu.detach().cpu().numpy()
@@ -300,6 +302,9 @@ class MixtureNormalMADE(nn.Module):
                 for i_col in range(inputs.shape[1]):
                     h = self.joiner(x, cond_inputs)
                     gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                    # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+                    # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
+
                     gamma = torch.sigmoid(gamma[:, i_col])
                     z = Bernoulli(probs=gamma).sample()  # .cuda()
                     nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
