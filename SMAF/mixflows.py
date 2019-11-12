@@ -283,11 +283,16 @@ class MixtureNormalMADE(nn.Module):
             u = (inputs - mu) * torch.exp(-log_std)
             # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
             # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
-            gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
+            # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
 
-            #
+            # ll using reshaped truncated normal
             ll = torch.where(inputs > 0,
                              (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+
+            # ll using truncated normal
+            ll = torch.where(inputs > 0,
+                             (gamma + 1e-10).log() + utils.trucated_normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
                              (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             self.gamma = gamma.detach().cpu().numpy()
@@ -303,12 +308,13 @@ class MixtureNormalMADE(nn.Module):
                     h = self.joiner(x, cond_inputs)
                     gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                     # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
-                    # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
 
                     gamma = torch.sigmoid(gamma[:, i_col])
                     z = Bernoulli(probs=gamma).sample()  # .cuda()
-                    nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
-                    # nonzeros = nonzeros.abs().detach()
+                    # nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
+                    nonzeros = utils.truncated_normal_sample(mu=mu[:, i_col],
+                                                             sigma=torch.exp(log_std[:, i_col]),
+                                                             num_samples=inputs.shape[0])
                     x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
             return x  # , -log_std.sum(-1, keepdim=True)
 

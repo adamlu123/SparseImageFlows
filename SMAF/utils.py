@@ -183,6 +183,7 @@ def get_psi(mu, std):
     return 0.5 * (1 + 2*torch.sigmoid(2.5*value)-1)
 
 
+# spiral permutation
 def spiral_perm(A, from_center=True):
     """
 
@@ -199,7 +200,7 @@ def spiral_perm(A, from_center=True):
         index_list = index_list + list(A[num_cols - row - 1, row:len(A) - row - 1][::-1])
         index_list = index_list + list(A[row + 1:len(A) - row - 1, row][::-1])
     if from_center:
-        index_list = index_list  #[::-1]
+        index_list = index_list[::-1]
     return index_list
 
 def vector_spiral_perm(data, dim):
@@ -213,3 +214,30 @@ def vector_spiral_perm(data, dim):
     perm_spiral = spiral_perm(A)
     return data[:, perm_spiral]
 
+
+
+# reparameterizable truncated normal approximation:
+import norm
+def sigmoid(x):
+    return 1/(1+torch.exp(-x))
+
+
+def erf_approx(value):
+    return 2 * sigmoid(2.5 * value) - 1
+
+
+def standard_normal_cdf(value):
+    return 0.5 * (1 + erf_approx(value / np.sqrt(2)))
+
+
+def trucated_normal_log_prob(mu, sd, value):
+    phi = 1 / np.sqrt(2 * np.pi) * torch.exp(-(value - mu) ** 2 / (2 * sd ** 2))
+    denominator = sd * (1 - standard_normal_cdf(-mu / sd))
+    return phi.log() - denominator.log()
+
+def truncated_normal_sample(mu, sigma, num_samples):
+    epsilon = np.random.uniform(0, 1, num_samples)
+    phi_a_bar = norm.cdf(-mu/sigma)
+    u = (1-phi_a_bar) * epsilon + phi_a_bar
+    x_bar = norm.ppf(u)
+    return sigma * x_bar + mu
