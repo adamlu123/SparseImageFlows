@@ -3,7 +3,7 @@ import copy
 import math
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import pickle as pkl
 import time
 import numpy as np
@@ -174,7 +174,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 1024
+    'JetImages': 625
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'

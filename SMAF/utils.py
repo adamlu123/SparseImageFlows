@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.distributions import Normal, Uniform, Gamma, Bernoulli
 import torchvision
 import h5py
+from scipy.stats import norm
 
 def save_moons_plot(epoch, best_model, dataset):
     # generate some examples
@@ -200,7 +201,7 @@ def spiral_perm(A, from_center=True):
         index_list = index_list + list(A[num_cols - row - 1, row:len(A) - row - 1][::-1])
         index_list = index_list + list(A[row + 1:len(A) - row - 1, row][::-1])
     if from_center:
-        index_list = index_list[::-1]
+        index_list = index_list  # [::-1]
     return index_list
 
 def vector_spiral_perm(data, dim):
@@ -217,7 +218,7 @@ def vector_spiral_perm(data, dim):
 
 
 # reparameterizable truncated normal approximation:
-import norm
+
 def sigmoid(x):
     return 1/(1+torch.exp(-x))
 
@@ -227,13 +228,14 @@ def erf_approx(value):
 
 
 def standard_normal_cdf(value):
-    return 0.5 * (1 + erf_approx(value / np.sqrt(2)))
+    return 0.5 * (1 + erf_approx(value / np.sqrt(2))).clamp(min=0, max=1)
 
 
 def trucated_normal_log_prob(mu, sd, value):
     phi = 1 / np.sqrt(2 * np.pi) * torch.exp(-(value - mu) ** 2 / (2 * sd ** 2))
     denominator = sd * (1 - standard_normal_cdf(-mu / sd))
-    return phi.log() - denominator.log()
+    return (phi / denominator).clamp(min=1e-10, max=1).log()
+
 
 def truncated_normal_sample(mu, sigma, num_samples):
     epsilon = np.random.uniform(0, 1, num_samples)
@@ -241,3 +243,15 @@ def truncated_normal_sample(mu, sigma, num_samples):
     u = (1-phi_a_bar) * epsilon + phi_a_bar
     x_bar = norm.ppf(u)
     return sigma * x_bar + mu
+
+
+
+
+
+
+
+
+
+
+
+

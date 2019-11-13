@@ -19,12 +19,14 @@ def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     if mask_type == 'input':
         in_degrees = torch.arange(in_features) % in_flow_features
     else:
-        in_degrees = torch.arange(in_features) % (in_flow_features - 1)
+        # in_degrees = torch.arange(in_features) % (in_flow_features - 1)
+        in_degrees = torch.arange(in_features) % in_flow_features
 
     if mask_type == 'output':
         out_degrees = torch.arange(out_features) % in_flow_features - 1
     else:
-        out_degrees = torch.arange(out_features) % (in_flow_features - 1)
+        # out_degrees = torch.arange(out_features) % (in_flow_features - 1)
+        out_degrees = torch.arange(out_features) % in_flow_features
 
     return (out_degrees.unsqueeze(-1) >= in_degrees.unsqueeze(0)).float()
 
@@ -268,10 +270,12 @@ class MixtureNormalMADE(nn.Module):
                                                    hidden_mask), act_func(),
                                    nn.MaskedLinear(num_hidden, num_hidden,
                                                    hidden_mask), act_func(),
+                                   # nn.MaskedLinear(num_hidden, num_hidden,
+                                   #                 hidden_mask), act_func(),
                                    nn.MaskedLinear(num_hidden, num_inputs * 3,
                                                    output_mask))
 
-        # self.ParameterFilter = ParameterFilter()
+        self.ParameterFilter = ParameterFilter()
 
     def forward(self, inputs, cond_inputs=None, mode='direct'):
         if mode == 'direct':
@@ -281,7 +285,7 @@ class MixtureNormalMADE(nn.Module):
 
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
-            # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+            gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
             # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
             # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
 
@@ -291,9 +295,9 @@ class MixtureNormalMADE(nn.Module):
                              (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             # ll using truncated normal
-            ll = torch.where(inputs > 0,
-                             (gamma + 1e-10).log() + utils.trucated_normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            # ll = torch.where(inputs > 0,
+            #                  (gamma + 1e-10).log() + utils.trucated_normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+            #                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             self.gamma = gamma.detach().cpu().numpy()
             self.alpha = mu.detach().cpu().numpy()
@@ -305,17 +309,26 @@ class MixtureNormalMADE(nn.Module):
             x = torch.zeros_like(inputs)
             with torch.no_grad():
                 for i_col in range(inputs.shape[1]):
+                    # print(i_col)
                     h = self.joiner(x, cond_inputs)
                     gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                     # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
 
                     gamma = torch.sigmoid(gamma[:, i_col])
-                    z = Bernoulli(probs=gamma).sample()  # .cuda()
-                    # nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
-                    nonzeros = utils.truncated_normal_sample(mu=mu[:, i_col],
-                                                             sigma=torch.exp(log_std[:, i_col]),
-                                                             num_samples=inputs.shape[0])
+                    # print(gamma.min(), gamma.max())
+
+                    # gamma, mu, log_std = gamma.cpu().numpy(), mu.cpu().numpy(), log_std.cpu().numpy()
+                    # z = np.random.binomial(1, gamma)
+
+                    z = Bernoulli(probs=gamma).sample()
+                    nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
                     x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+
+                    # nonzeros = utils.truncated_normal_sample(mu=mu[:, i_col],
+                    #                                          sigma=np.exp(log_std[:, i_col]),
+                    #                                          num_samples=inputs.shape[0])
+                    # nonzeros = torch.tensor(nonzeros, dtype=torch.float).detach()
+                    # x[:, i_col] = torch.tensor(np.where(z > 0, nonzeros, np.zeros_like(nonzeros)), dtype=torch.float).cuda()
             return x  # , -log_std.sum(-1, keepdim=True)
 
 
