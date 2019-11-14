@@ -241,6 +241,7 @@ class MixtureGammaMADE(nn.Module):
     #         return x
 
 
+
 class MixtureNormalMADE(nn.Module):
     """ An implementation of mxiture of Dirac delta and normal: MADE structure
     (https://arxiv.org/abs/1502.03509s).
