@@ -104,12 +104,13 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    train_dataset = load_data_LAGAN(subset=args.subset)
-    train_dataset = train_dataset.reshape(-1, 625)
+    # train_dataset = load_data_LAGAN(subset=args.subset)
+    # train_dataset = train_dataset.reshape(-1, 625)
 
-    # train_dataset = load_jet_image(num=50000, signal=1)
-    # train_dataset = train_dataset.reshape(-1, 1024)
-    utils.vector_spiral_perm(train_dataset, dim=25)
+    train_dataset = load_jet_image(num=50000, signal=1)
+    train_dataset = train_dataset.reshape(-1, 1024)
+    image_size = 32
+    utils.vector_spiral_perm(train_dataset, dim=image_size)
 
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
@@ -174,7 +175,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 625
+    'JetImages': 2014
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
@@ -302,12 +303,12 @@ def train(epoch):
 
 
 
-def get_distance(image, samples):
+def get_distance(image, samples, image_size):
     samples[samples < 0] = 0  # -samples_bg[samples_bg<0]
     pt_dist = wasserstein_distance(plot_utils.discrete_pt(image),
-                                plot_utils.discrete_pt(np.asarray(samples.tolist()).reshape(-1, 25, 25)))
+                                plot_utils.discrete_pt(np.asarray(samples.tolist()).reshape(-1, image_size, image_size)))
     mass_dist = wasserstein_distance(plot_utils.discrete_mass(image),
-                               plot_utils.discrete_mass(np.asarray(samples.tolist()).reshape(-1, 25, 25)))
+                               plot_utils.discrete_mass(np.asarray(samples.tolist()).reshape(-1, image_size, image_size)))
     print('Wasserstein distance Pt:', pt_dist)
     print('Wasserstein distance Mass:', mass_dist)
     return [pt_dist, mass_dist]
@@ -321,15 +322,15 @@ dist_list = []
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 5 == 0:
+    if epoch % 50 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.sample(num_samples=1000, input_size=625)
+        samples = model.sample(num_samples=1000, input_size=image_size**2)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset.reshape(-1, 25, 25)[:1000], samples)
+        dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:1000], samples,image_size=image_size)
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 

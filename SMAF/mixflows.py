@@ -291,14 +291,14 @@ class MixtureNormalMADE(nn.Module):
             # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
 
             # ll using reshaped truncated normal
-            ll = torch.where(inputs > 0,
-                             (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            # ll = torch.where(inputs > 0,
+            #                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+            #                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             # ll using truncated normal
-            # ll = torch.where(inputs > 0,
-            #                  (gamma + 1e-10).log() + utils.trucated_normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-            #                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            ll = torch.where(inputs > 0,
+                             (gamma + 1e-10).log() + utils.trucated_normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             self.gamma = gamma.detach().cpu().numpy()
             self.alpha = mu.detach().cpu().numpy()
@@ -313,23 +313,20 @@ class MixtureNormalMADE(nn.Module):
                     # print(i_col)
                     h = self.joiner(x, cond_inputs)
                     gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                    gamma = torch.sigmoid(gamma[:, i_col])
                     # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
 
-                    gamma = torch.sigmoid(gamma[:, i_col])
-                    # print(gamma.min(), gamma.max())
+                    # z = Bernoulli(probs=gamma).sample()
+                    # nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
+                    # x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
 
-                    # gamma, mu, log_std = gamma.cpu().numpy(), mu.cpu().numpy(), log_std.cpu().numpy()
-                    # z = np.random.binomial(1, gamma)
-
-                    z = Bernoulli(probs=gamma).sample()
-                    nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
-                    x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-
-                    # nonzeros = utils.truncated_normal_sample(mu=mu[:, i_col],
-                    #                                          sigma=np.exp(log_std[:, i_col]),
-                    #                                          num_samples=inputs.shape[0])
-                    # nonzeros = torch.tensor(nonzeros, dtype=torch.float).detach()
-                    # x[:, i_col] = torch.tensor(np.where(z > 0, nonzeros, np.zeros_like(nonzeros)), dtype=torch.float).cuda()
+                    gamma, mu, log_std = gamma.cpu().numpy(), mu.cpu().numpy(), log_std.cpu().numpy()
+                    nonzeros = utils.truncated_normal_sample(mu=mu[:, i_col],
+                                                             sigma=np.exp(log_std[:, i_col]),
+                                                             num_samples=inputs.shape[0])
+                    nonzeros = torch.tensor(nonzeros, dtype=torch.float).detach()
+                    z = np.random.binomial(1, gamma)
+                    x[:, i_col] = torch.tensor(np.where(z > 0, nonzeros, np.zeros_like(nonzeros)), dtype=torch.float).cuda()
             return x  # , -log_std.sum(-1, keepdim=True)
 
 
@@ -374,7 +371,7 @@ class FlowSequential(nn.Sequential):
         self.num_inputs = inputs.size(-1)
 
         if logdets is None:
-            logdets = torch.zeros(inputs.size(0), 625, device=inputs.device)
+            logdets = torch.zeros(inputs.size(0), 1024, device=inputs.device)
 
         assert mode in ['direct', 'inverse']
         if mode == 'direct':
@@ -411,7 +408,7 @@ class FlowSequential(nn.Sequential):
             #                  (1-gamma).log()).sum(dim=-1, keepdim=True)
             return ll
 
-    def sample(self, num_samples=None, noise=None, cond_inputs=None, input_size=625):
+    def sample(self, num_samples=None, noise=None, cond_inputs=None, input_size=1024):
         # input_size =
         if noise is None:
             noise = torch.Tensor(num_samples, input_size).normal_()
