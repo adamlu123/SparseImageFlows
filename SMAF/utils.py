@@ -232,9 +232,11 @@ def standard_normal_cdf(value):
 
 
 def trucated_normal_log_prob(mu, sd, value):
-    phi = 1 / np.sqrt(2 * np.pi) * torch.exp(-(value - mu) ** 2 / (2 * sd ** 2))
-    denominator = sd * (1 - standard_normal_cdf(-mu / sd))
-    return (phi / denominator).clamp(min=1e-5, max=1e2).log()
+    log_phi = -np.log(np.sqrt(2 * np.pi)) - (value - mu) ** 2 / (2 * sd ** 2)
+    log_denominator = sd.log() + (1 - standard_normal_cdf(-mu / sd)).log()
+    # phi = 1 / np.sqrt(2 * np.pi) * torch.exp(-(value - mu) ** 2 / (2 * sd ** 2))
+    # denominator = sd * (1 - standard_normal_cdf(-mu / sd))
+    return log_phi - log_denominator
 
 
 # def truncated_normal_sample(mu, sigma, num_samples):

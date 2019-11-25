@@ -87,8 +87,8 @@ def load_data(subset, dataset='train'):
 def load_data_LAGAN(subset='signal'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
-        image = np.asarray(f['image'])
-        real_labels = np.asarray(f['signal'])
+        image = np.asarray(f['image'])[:10000]
+        real_labels = np.asarray(f['signal'])[:10000]
     real_imagebg = image[real_labels == 0]
     real_imagesg = image[real_labels == 1]
     print(real_imagebg.shape, real_imagesg.shape)

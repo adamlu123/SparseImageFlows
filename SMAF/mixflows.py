@@ -19,14 +19,14 @@ def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     if mask_type == 'input':
         in_degrees = torch.arange(in_features) % in_flow_features
     else:
-        # in_degrees = torch.arange(in_features) % (in_flow_features - 1)
-        in_degrees = torch.arange(in_features) % in_flow_features
+        in_degrees = torch.arange(in_features) % (in_flow_features - 1)
+        # in_degrees = torch.arange(in_features) % in_flow_features
 
     if mask_type == 'output':
         out_degrees = torch.arange(out_features) % in_flow_features - 1
     else:
-        # out_degrees = torch.arange(out_features) % (in_flow_features - 1)
-        out_degrees = torch.arange(out_features) % in_flow_features
+        out_degrees = torch.arange(out_features) % (in_flow_features - 1)
+        # out_degrees = torch.arange(out_features) % in_flow_features
 
     return (out_degrees.unsqueeze(-1) >= in_degrees.unsqueeze(0)).float()
 
@@ -226,7 +226,8 @@ class MixtureNormalMADE(nn.Module):
                  num_inputs,
                  num_hidden,
                  num_cond_inputs=None,
-                 act='relu'):
+                 act='relu',
+                 num_latent_layer=2):
         super(MixtureNormalMADE, self).__init__()
 
         activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
@@ -241,19 +242,27 @@ class MixtureNormalMADE(nn.Module):
         self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
                                       num_cond_inputs)
 
-        self.trunk = nn.Sequential(act_func(),
-                                   nn.MaskedLinear(num_hidden, num_hidden,
-                                                   hidden_mask), act_func(),
-                                   nn.MaskedLinear(num_hidden, num_hidden,
-                                                   hidden_mask), act_func(),
-                                   # nn.MaskedLinear(num_hidden, num_hidden,
-                                   #                 hidden_mask), act_func(),
-                                   nn.MaskedLinear(num_hidden, num_inputs * 3,
+        latent_modules = []
+        for i in range(num_latent_layer):
+            latent_modules.append(act_func())
+            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
+                                                   hidden_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3,
                                                    output_mask))
+        self.trunk = nn.Sequential(*latent_modules)
 
-        self.ParameterFilter = ParameterFilter()
+        # self.trunk = nn.Sequential(act_func(),
+        #                            nn.MaskedLinear(num_hidden, num_hidden,
+        #                                            hidden_mask), act_func(),
+        #                            nn.MaskedLinear(num_hidden, num_hidden,
+        #                                            hidden_mask), act_func(),
+        #                            # nn.MaskedLinear(num_hidden, num_hidden,
+        #                            #                 hidden_mask), act_func(),
+        #                            nn.MaskedLinear(num_hidden, num_inputs * 3,
+        #                                            output_mask))
+        # self.ParameterFilter = ParameterFilter()
 
-    def forward(self, inputs, cond_inputs=None, mode='direct', method="truncated normal", epoch=0):
+    def forward(self, inputs, cond_inputs=None, mode='direct', method="reshaped normal", epoch=0):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
@@ -263,12 +272,13 @@ class MixtureNormalMADE(nn.Module):
 
             # ll using reshaped normal
             if method == "reshaped normal":
-                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+                # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
                 # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
-                # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
+                # gamma = gamma - gamma * utils.get_psi(mu.detach(), torch.exp(log_std).detach())
                 ll = torch.where(inputs > 0,
                                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
                                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+
             # ll using truncated normal
             elif method == "truncated normal":
                 ll = torch.where(inputs > 0,

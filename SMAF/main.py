@@ -20,7 +20,7 @@ from tqdm import tqdm
 import datasets
 import mixflows as fnn
 from scipy.stats import wasserstein_distance
-from Notebooks import plot_utils
+import plot_utils
 
 
 
@@ -42,7 +42,7 @@ parser.add_argument(
 parser.add_argument(
     '--epochs',
     type=int,
-    default=5000,
+    default=1000,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
     '--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
@@ -88,6 +88,15 @@ parser.add_argument(
         "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_peter_smaf',
         help="result directory"
     )
+parser.add_argument(
+        "--activation", type=str, default='sigmoid',
+        help="activation"
+    )
+parser.add_argument(
+        "--latent", type=int, default=2,
+        help="number of latent layer in the flow"
+    )
+
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -177,7 +186,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 1024
+    'JetImages': 1250
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
@@ -236,7 +245,8 @@ elif args.flow == 'maf-split-glow':
         ]
 elif args.flow == 'mixture-maf':
 
-    modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs, act='sigmoid')]
+    modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
+                                      act=args.activation, num_latent_layer=args.latent)]
     # for _ in range(args.num_blocks):
     #     modules += [
     #         fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='sigmoid'),
@@ -333,15 +343,15 @@ for epoch in range(args.epochs):
         print('end sampling, duration:{}'.format(duration))
 
         dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:1000], samples, image_size=image_size)
-        # with open(args.result_dir + '/distance_list.txt', 'a') as f:
-        #     f.write(str(dist) + ', \n')
+        with open(args.result_dir + '/distance_list.txt', 'a') as f:
+            f.write(str(dist) + ', \n')
 
 
         if epoch % 50 == 0:
             distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
             # torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
-            with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
-                pkl.dump(samples.tolist(), f)
-                print('generated images saved!')
+            # with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
+            #     pkl.dump(samples.tolist(), f)
+            #     print('generated images saved!')
 
