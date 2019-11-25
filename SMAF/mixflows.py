@@ -216,31 +216,6 @@ class MixtureGammaMADE(nn.Module):
                                              beta=1)  # inputs[:, i_col] * torch.exp(a[:, i_col]) + m[:, i_col]
             return x
 
-    # def forward(self, inputs, cond_inputs=None, mode='direct'):
-    #     if mode == 'direct':
-    #         h = self.joiner(inputs, cond_inputs)
-    #         gamma, alpha, beta = self.trunk(h).chunk(3, 1)
-    #         gamma = torch.sigmoid(gamma)
-    #         # alpha = torch.exp(alpha) #+ 1e-2
-    #         ll = torch.where(inputs > 0,
-    #                           gamma.log() + utils.normal_log_prob(mu=alpha, sd=beta.exp(), value=inputs),
-    #                           (1-gamma).log()).sum(dim=-1, keepdim=True)
-    #         self.gamma = gamma.detach().cpu().numpy()
-    #         self.alpha = alpha.detach().cpu().numpy()
-    #         return ll.mean()
-    #
-    #     else:
-    #         x = torch.zeros_like(inputs)
-    #         for i_col in range(inputs.shape[1]):
-    #             h = self.joiner(x, cond_inputs)
-    #             gamma, alpha, beta = self.trunk(h).chunk(2, 1)
-    #             gamma = torch.sigmoid(gamma)
-    #             z = Bernoulli(p=gamma).sample().cuda()
-    #             nonzeros = inputs[:, i_col] * torch.exp(beta[:, i_col]) + alpha[:, i_col]
-    #             x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-    #         return x
-
-
 
 class MixtureNormalMADE(nn.Module):
     """ An implementation of mxiture of Dirac delta and normal: MADE structure
@@ -278,33 +253,35 @@ class MixtureNormalMADE(nn.Module):
 
         self.ParameterFilter = ParameterFilter()
 
-    def forward(self, inputs, cond_inputs=None, mode='direct'):
+    def forward(self, inputs, cond_inputs=None, mode='direct', method="truncated normal", epoch=0):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
             # gamma, mu, log_std = self.ParameterFilter(gamma, mu, log_std)
-
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
-            gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
-            # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
-            # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
 
-            # ll using reshaped truncated normal
-            # ll = torch.where(inputs > 0,
-            #                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-            #                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
-
+            # ll using reshaped normal
+            if method == "reshaped normal":
+                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+                # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
+                # gamma = gamma - gamma * utils.get_psi(mu, torch.exp(log_std))
+                ll = torch.where(inputs > 0,
+                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
             # ll using truncated normal
-            ll = torch.where(inputs > 0,
-                             (gamma + 1e-10).log() + utils.trucated_normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            elif method == "truncated normal":
+                ll = torch.where(inputs > 0,
+                                 (gamma + 1e-10).log() + utils.trucated_normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            else:
+                print('Method has to be either reshaped or truncated normal!')
 
             self.gamma = gamma.detach().cpu().numpy()
-            self.alpha = mu.detach().cpu().numpy()
+            self.mu = mu.detach().cpu().numpy()
             self.log_std = log_std.detach().cpu().numpy()
 
-            return u, -log_std, ll  # output gamma to compute ll
+            return u, -log_std, ll
 
         else:
             x = torch.zeros_like(inputs)
@@ -314,20 +291,24 @@ class MixtureNormalMADE(nn.Module):
                     h = self.joiner(x, cond_inputs)
                     gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                     gamma = torch.sigmoid(gamma[:, i_col])
-                    # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
 
-                    # z = Bernoulli(probs=gamma).sample()
-                    # nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
-                    # x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+                    if method == "reshaped normal":
+                        # gamma = (1 - gamma) * utils.get_psi(mu[:, i_col], torch.exp(log_std[:, i_col])) + gamma
+                        z = Bernoulli(probs=gamma).sample()
+                        nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
+                        x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
 
-                    gamma, mu, log_std = gamma.cpu().numpy(), mu.cpu().numpy(), log_std.cpu().numpy()
-                    nonzeros = utils.truncated_normal_sample(mu=mu[:, i_col],
-                                                             sigma=np.exp(log_std[:, i_col]),
-                                                             num_samples=inputs.shape[0])
-                    nonzeros = torch.tensor(nonzeros, dtype=torch.float).detach()
-                    z = np.random.binomial(1, gamma)
-                    x[:, i_col] = torch.tensor(np.where(z > 0, nonzeros, np.zeros_like(nonzeros)), dtype=torch.float).cuda()
-            return x  # , -log_std.sum(-1, keepdim=True)
+                    elif method == "truncated normal":
+                        gamma, mu, log_std = gamma.cpu(), mu.cpu(), log_std.cpu()
+                        nonzeros = utils.truncated_normal_sample(mu=mu[:, i_col],
+                                                                 sigma=log_std[:, i_col],
+                                                                 num_samples=inputs.shape[0])
+                        # print(gamma.min(), gamma.max())
+                        # nonzeros = torch.tensor(nonzeros, dtype=torch.float).detach()
+                        z = Bernoulli(probs=gamma).sample()
+                        x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+                            # torch.tensor(np.where(z > 0, nonzeros, np.zeros_like(nonzeros)), dtype=torch.float).cuda()
+            return x.clamp(min=0)
 
 
 class Sigmoid(nn.Module):
@@ -371,7 +352,7 @@ class FlowSequential(nn.Sequential):
         self.num_inputs = inputs.size(-1)
 
         if logdets is None:
-            logdets = torch.zeros(inputs.size(0), 1024, device=inputs.device)
+            logdets = torch.zeros(inputs.size(0), inputs.size(-1), device=inputs.device)
 
         assert mode in ['direct', 'inverse']
         if mode == 'direct':

@@ -3,7 +3,7 @@ import copy
 import math
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import pickle as pkl
 import time
 import numpy as np
@@ -104,16 +104,18 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    # train_dataset = load_data_LAGAN(subset=args.subset)
-    # train_dataset = train_dataset.reshape(-1, 625)
+    train_dataset = load_data_LAGAN(subset=args.subset)
+    train_dataset = train_dataset.reshape(-1, 625)
+    image_size = 25
 
-    train_dataset = load_jet_image(num=50000, signal=1)
-    train_dataset = train_dataset.reshape(-1, 1024)
-    image_size = 32
-    utils.vector_spiral_perm(train_dataset, dim=image_size)
+    # train_dataset = load_jet_image(num=50000, signal=1)
+    # train_dataset = train_dataset.reshape(-1, 1024)
+    # image_size = 32
 
+    # train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
+
 else:
     assert args.dataset in [
         'POWER', 'GAS', 'HEPMASS', 'MINIBONE', 'BSDS300', 'MOONS', 'MNIST'
@@ -175,7 +177,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 2014
+    'JetImages': 1024
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
@@ -280,13 +282,13 @@ def train(epoch):
         optimizer.zero_grad()
         loss = -model.log_probs(data).mean()
         gamma = model._modules['0'].gamma
-        alpha = model._modules['0'].alpha
+        mu = model._modules['0'].mu
         log_std = model._modules['0'].log_std
         u = model.u
         log_jacob = model.log_jacob
         if batch_idx % args.log_interval == 0:
             print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
-            print('alpha min:{}, alpha max:{}, alpha mean:{}'.format(alpha.min(), alpha.max(), alpha.mean()))
+            print('mu min:{}, mu max:{}, mu mean:{}'.format(mu.min(), mu.max(), mu.mean()))
             print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
             print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
             print('log_jacob min:{}, max:{}, mean:{}'.format(log_jacob.min(), log_jacob.max(), log_jacob.mean()))
@@ -322,7 +324,7 @@ dist_list = []
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 50 == 0:
+    if epoch % 5 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
@@ -330,15 +332,15 @@ for epoch in range(args.epochs):
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:1000], samples,image_size=image_size)
-        with open(args.result_dir + '/distance_list.txt', 'a') as f:
-            f.write(str(dist) + ', \n')
+        dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:1000], samples, image_size=image_size)
+        # with open(args.result_dir + '/distance_list.txt', 'a') as f:
+        #     f.write(str(dist) + ', \n')
 
 
         if epoch % 50 == 0:
             distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
+            # torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
             with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')

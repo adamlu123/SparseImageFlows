@@ -234,14 +234,23 @@ def standard_normal_cdf(value):
 def trucated_normal_log_prob(mu, sd, value):
     phi = 1 / np.sqrt(2 * np.pi) * torch.exp(-(value - mu) ** 2 / (2 * sd ** 2))
     denominator = sd * (1 - standard_normal_cdf(-mu / sd))
-    return (phi / denominator).clamp(min=1e-10, max=1).log()
+    return (phi / denominator).clamp(min=1e-5, max=1e2).log()
+
+
+# def truncated_normal_sample(mu, sigma, num_samples):
+#     epsilon = np.random.uniform(0, 1, num_samples)
+#     phi_a_bar = norm.cdf(-mu/sigma)
+#     u = (1-phi_a_bar) * epsilon + phi_a_bar
+#     x_bar = norm.ppf(u)
+#     return sigma * x_bar + mu
 
 
 def truncated_normal_sample(mu, sigma, num_samples):
-    epsilon = np.random.uniform(0, 1, num_samples)
-    phi_a_bar = norm.cdf(-mu/sigma)
+    epsilon = Uniform(torch.tensor([0.0]), torch.tensor([1.0])).sample(torch.Size([num_samples])).squeeze()
+    standard_norm = Normal(torch.tensor([0.0]), torch.tensor([1.0]))
+    phi_a_bar = standard_norm.cdf(-mu/sigma)
     u = (1-phi_a_bar) * epsilon + phi_a_bar
-    x_bar = norm.ppf(u)
+    x_bar = standard_norm.icdf(u)
     return sigma * x_bar + mu
 
 
