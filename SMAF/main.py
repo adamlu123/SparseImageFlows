@@ -3,7 +3,7 @@ import copy
 import math
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import pickle as pkl
 import time
 import numpy as np

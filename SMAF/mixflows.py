@@ -272,7 +272,7 @@ class MixtureNormalMADE(nn.Module):
 
             # ll using reshaped normal
             if method == "reshaped normal":
-                # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
                 # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
                 # gamma = gamma - gamma * utils.get_psi(mu.detach(), torch.exp(log_std).detach())
                 ll = torch.where(inputs > 0,
