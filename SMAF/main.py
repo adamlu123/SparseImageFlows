@@ -186,7 +186,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 1250
+    'JetImages': 1024
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
