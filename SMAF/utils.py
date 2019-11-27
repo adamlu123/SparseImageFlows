@@ -258,6 +258,31 @@ def truncated_normal_sample(mu, sigma, num_samples):
 
 
 
+class ChiSquareTest(object):
+    def __init__(self, bins, truth):
+        self.bins = bins
+        self.expectation = self.get_bin_count(truth, bins)
+
+    def getChisquare(self, image):
+        count = self.get_bin_count(image, self.bins)
+        distance = 0
+        for i in range(self.bins):
+            for j in range(self.bins):
+                if self.expectation[i,j] != 0.0:
+                    distance += (count[i,j] - self.expectation[i,j])**2 / self.expectation[i,j]
+        return distance
+
+    def get_bin_count(self, image, bins):
+        count = np.zeros((bins, bins))
+        mass, pt = image[0], image[1]
+        min_mass, max_mass, min_pt, max_pt = mass.min(), mass.max(), pt.min(), pt.max()
+        bin_size_mass, bin_size_pt = (max_mass - min_mass) / bins + 1e-5, (max_pt - min_pt) / bins + 1e-5
+        for i in range(image[0].shape[0]):
+            id_mass, id_pt = int((mass[i] - min_mass) // bin_size_mass), int((pt[i] - min_pt) // bin_size_pt)
+            count[id_mass, id_pt] += 1
+        return count
+
+
 
 
 

@@ -242,25 +242,25 @@ class MixtureNormalMADE(nn.Module):
         self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
                                       num_cond_inputs)
 
-        latent_modules = []
-        for i in range(num_latent_layer):
-            latent_modules.append(act_func())
-            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
-                                                   hidden_mask))
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3,
-                                                   output_mask))
-        self.trunk = nn.Sequential(*latent_modules)
-
-        # self.trunk = nn.Sequential(act_func(),
-        #                            nn.MaskedLinear(num_hidden, num_hidden,
-        #                                            hidden_mask), act_func(),
-        #                            nn.MaskedLinear(num_hidden, num_hidden,
-        #                                            hidden_mask), act_func(),
-        #                            # nn.MaskedLinear(num_hidden, num_hidden,
-        #                            #                 hidden_mask), act_func(),
-        #                            nn.MaskedLinear(num_hidden, num_inputs * 3,
+        # latent_modules = []
+        # for i in range(num_latent_layer):
+        #     latent_modules.append(act_func())
+        #     latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
+        #                                            hidden_mask))
+        # latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3,
         #                                            output_mask))
-        # self.ParameterFilter = ParameterFilter()
+        # self.trunk = nn.Sequential(*latent_modules)
+
+        self.trunk = nn.Sequential(act_func(),
+                                   nn.MaskedLinear(num_hidden, num_hidden,
+                                                   hidden_mask), act_func(),
+                                   nn.MaskedLinear(num_hidden, num_hidden,
+                                                   hidden_mask), act_func(),
+                                   # nn.MaskedLinear(num_hidden, num_hidden,
+                                   #                 hidden_mask), act_func(),
+                                   nn.MaskedLinear(num_hidden, num_inputs * 3,
+                                                   output_mask))
+        self.ParameterFilter = ParameterFilter()
 
     def forward(self, inputs, cond_inputs=None, mode='direct', method="reshaped normal", epoch=0):
         if mode == 'direct':
