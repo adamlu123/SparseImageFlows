@@ -89,7 +89,7 @@ parser.add_argument(
         help="result directory"
     )
 parser.add_argument(
-        "--activation", type=str, default='sigmoid',
+        "--activation", type=str, default='relu',
         help="activation"
     )
 parser.add_argument(
@@ -121,7 +121,7 @@ if args.jet_images == True:
     # train_dataset = train_dataset.reshape(-1, 1024)
     # image_size = 32
 
-    # train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
+    train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
 

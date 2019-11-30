@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Gamma, Bernoulli
 import utils
-
+import plot_utils
 
 def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     """
@@ -242,25 +242,25 @@ class MixtureNormalMADE(nn.Module):
         self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
                                       num_cond_inputs)
 
-        # latent_modules = []
-        # for i in range(num_latent_layer):
-        #     latent_modules.append(act_func())
-        #     latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
-        #                                            hidden_mask))
-        # latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3,
-        #                                            output_mask))
-        # self.trunk = nn.Sequential(*latent_modules)
-
-        self.trunk = nn.Sequential(act_func(),
-                                   nn.MaskedLinear(num_hidden, num_hidden,
-                                                   hidden_mask), act_func(),
-                                   nn.MaskedLinear(num_hidden, num_hidden,
-                                                   hidden_mask), act_func(),
-                                   # nn.MaskedLinear(num_hidden, num_hidden,
-                                   #                 hidden_mask), act_func(),
-                                   nn.MaskedLinear(num_hidden, num_inputs * 3,
+        latent_modules = []
+        for i in range(num_latent_layer):
+            latent_modules.append(act_func())
+            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
+                                                   hidden_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3,
                                                    output_mask))
-        self.ParameterFilter = ParameterFilter()
+        self.trunk = nn.Sequential(*latent_modules)
+
+        # self.trunk = nn.Sequential(act_func(),
+        #                            nn.MaskedLinear(num_hidden, num_hidden,
+        #                                            hidden_mask), act_func(),
+        #                            nn.MaskedLinear(num_hidden, num_hidden,
+        #                                            hidden_mask), act_func(),
+        #                            # nn.MaskedLinear(num_hidden, num_hidden,
+        #                            #                 hidden_mask), act_func(),
+        #                            nn.MaskedLinear(num_hidden, num_inputs * 3,
+        #                                            output_mask))
+        # self.ParameterFilter = ParameterFilter()
 
     def forward(self, inputs, cond_inputs=None, mode='direct', method="reshaped normal", epoch=0):
         if mode == 'direct':
@@ -278,6 +278,8 @@ class MixtureNormalMADE(nn.Module):
                 ll = torch.where(inputs > 0,
                                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
                                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                # ll += discrete_mass(mu.view(-1,25,25)) + discrete_pt(mu.view(-1,25,25))
+
 
             # ll using truncated normal
             elif method == "truncated normal":
@@ -482,3 +484,47 @@ class Reverse(nn.Module):
             return inputs[:, self.perm], torch.zeros(inputs.size(0), 625, device=inputs.device)
         else:
             return inputs[:, self.inv_perm]  # , torch.zeros(inputs.size(0), 1, device=inputs.device)
+
+
+image_size = 25
+grid = 0.5 * (np.linspace(-1.25, 1.25, image_size+1)[:-1] + np.linspace(-1.25, 1.25, image_size+1)[1:])
+eta = torch.tensor(np.tile(grid, (image_size, 1)), dtype=torch.float).cuda()
+phi = torch.tensor(np.tile(grid[::-1].reshape(-1, 1), (1, image_size)), dtype=torch.float).cuda()
+
+def discrete_mass(jet_image):
+    '''
+    Calculates the jet mass from a pixelated jet image
+    Args:
+    -----
+        jet_image: numpy ndarray of dim (1, 25, 25)
+    Returns:
+    --------
+        M: float, jet mass
+    '''
+
+    Px = torch.sum(jet_image * torch.cos(phi), dim=(1, 2))
+    Py = torch.sum(jet_image * torch.sin(phi), dim=(1, 2))
+
+    Pz = torch.sum(jet_image * torch.sinh(eta), dim=(1, 2))
+    E = torch.sum(jet_image * torch.cosh(eta), dim=(1, 2))
+
+    PT2 = Px**2 + Py**2
+    M2 = E**2 - (PT2 + Pz**2)
+    M = torch.sqrt(M2)
+    return M
+
+def discrete_pt(jet_image):
+    '''
+    Calculates the jet transverse momentum from a pixelated jet image
+    Args:
+    -----
+        jet_image: numpy ndarray of dim (1, 25, 25)
+    Returns:
+    --------
+        float, jet transverse momentum
+    '''
+    Px = torch.sum(jet_image * torch.cos(phi), dim=(1, 2))
+    Py = torch.sum(jet_image * torch.sin(phi), dim=(1, 2))
+    return torch.sqrt(Px**2 + Py**2)
+
+
