@@ -323,6 +323,7 @@ class MixtureNormalMADE(nn.Module):
             return x.clamp(min=0)
 
 
+
 class Sigmoid(nn.Module):
     def __init__(self):
         super(Sigmoid, self).__init__()
