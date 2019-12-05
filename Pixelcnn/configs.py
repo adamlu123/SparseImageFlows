@@ -8,7 +8,7 @@ datasets_dir = project_dir.joinpath('datasets/')
 
 # Where to save checkpoint and log images
 # result_dir = project_dir.joinpath('results/')
-result_dir = Path('/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/lagan_pixelcnn/a1_b1')
+result_dir = Path('/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/lagan_pixelcnn/a1_b5')
 if not result_dir.exists():
     result_dir.mkdir()
 

@@ -141,7 +141,7 @@ class Solver(object):
                 # Sample single pixel (each channel independently)
                 for k in range(1):  # k # of channels
                     # 0 ~ 255 => 0 ~ 1
-                    pixel = torch.multinomial(probs[:, k], 1).float() / quant_bins
+                    pixel = torch.multinomial(probs[:, k], 1).float()  # / quant_bins
                     sample[:, k, i, j] = pixel.squeeze()
 
         with open(self.config.ckpt_dir.joinpath(f'samples_epoch-{epoch_i}.pkl'), 'wb') as f:

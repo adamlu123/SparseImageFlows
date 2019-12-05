@@ -78,7 +78,7 @@ class PixelCNN(nn.Module):
 
         self.MaskAConv = maskAConv(n_channel, 2 * h, k_size=7, stride=1, pad=3)
         MaskBConv = []
-        for i in range(1):
+        for i in range(3):
             MaskBConv.append(MaskBConvBlock(h, k_size=3, stride=1, pad=1))
         self.MaskBConv = nn.Sequential(*MaskBConv)
 
@@ -90,6 +90,14 @@ class PixelCNN(nn.Module):
             nn.ReLU(),
             nn.Conv2d(imagesize, n_channel * discrete_channel, kernel_size=1, stride=1, padding=0))
 
+        # point mass inference
+        self.linearA = maskAConv(c_in=1, c_out=1, k_size=1, stride=1, pad=3)
+        linearB = []
+        for i in range(3):
+            linearB.append(MaskedConv2d('B', c_in=1, c_out=1, k_size=1, stride=1, pad=3))
+        self.linearB = nn.Sequential(*linearB)
+
+
     def forward(self, x):
         """
         Args:
@@ -99,17 +107,19 @@ class PixelCNN(nn.Module):
         """
         batch_size, c_in, height, width = x.size()
 
-        # [batch_size, 2h, 32, 32]
+        # [batch_size, 2h, 25, 25]
         x = self.MaskAConv(x)
-
-        # [batch_size, 2h, 32, 32]
+        delta = self.linearA(x)
+        # [batch_size, 2h, 25, 25]
         x = self.MaskBConv(x)
-
-        # [batch_size, 3x256, 32, 32]
+        delta = self.linearB(delta)
+        # [batch_size, 1x276, 25, 25]
         x = self.out(x)
+
 
         # [batch_size, 3, 256, 32, 32]
         x = x.view(batch_size, c_in, self.discrete_channel, height, width)
+        # TODO add x = x * delta
 
         # [batch_size, 3, 32, 32, 256]
         x = x.permute(0, 1, 3, 4, 2)
