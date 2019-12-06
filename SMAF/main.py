@@ -85,7 +85,7 @@ parser.add_argument(
         help="training on which subset"
     )
 parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/jet_peter_smaf',
+        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/lagan_pixelcnn/Mixture',
         help="result directory"
     )
 parser.add_argument(
@@ -121,7 +121,7 @@ if args.jet_images == True:
     # train_dataset = train_dataset.reshape(-1, 1024)
     # image_size = 32
 
-    train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
+    # train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
 
@@ -335,7 +335,7 @@ dist_list = []
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 5 == 0:
+    if epoch % 20 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
@@ -344,15 +344,15 @@ for epoch in range(args.epochs):
         print('end sampling, duration:{}'.format(duration))
 
         dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:1000], samples, image_size=image_size)
-        with open(args.result_dir + '/distance_list.txt', 'a') as f:
-            f.write(str(dist) + ', \n')
+        # with open(args.result_dir + '/distance_list.txt', 'a') as f:
+        #     f.write(str(dist) + ', \n')
 
 
-        if epoch % 50 == 0:
-            distance = np.asarray(dist_list)
+        if epoch % 20 == 0:
+            # distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
             # torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
-            # with open(args.result_dir + '/MixNorm_img_sample_{}.pkl'.format(epoch), 'wb') as f:
-            #     pkl.dump(samples.tolist(), f)
-            #     print('generated images saved!')
+            with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
+                pkl.dump(samples.tolist(), f)
+                print('generated images saved!')
 
