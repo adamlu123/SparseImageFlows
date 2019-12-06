@@ -567,7 +567,7 @@ class MixtureDiscreteMADE(nn.Module):
             num_inputs, num_hidden, num_inputs, mask_type='input')
         hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
         output_mask = get_mask(
-            num_hidden, num_inputs, num_inputs, mask_type='output')
+            num_hidden, num_inputs * 2, num_inputs, mask_type='output')
 
         self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
                                       num_cond_inputs)
@@ -577,31 +577,36 @@ class MixtureDiscreteMADE(nn.Module):
             latent_modules.append(act_func())
             latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
                                                    hidden_mask))
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs,
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 2,
                                                    output_mask))
         self.trunk = nn.Sequential(*latent_modules)
 
-        fm = 64
-        self.net = nn.Sequential(
-        MaskedConv2d('A', 1,  fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        nn.Conv2d(fm, 277, 1))
-
+        # fm = 64
+        # self.net = nn.Sequential(
+        # MaskedConv2d('A', 1,  fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        # nn.Conv2d(fm, 277, 1))
+        self.conv1d = nn.Sequential(
+            nn.Conv1d(in_channels=1, out_channels=90, stride=1, kernel_size=1), nn.BatchNorm1d(90), nn.Sigmoid(),
+            nn.Conv1d(in_channels=90, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.Sigmoid(),
+            nn.Conv1d(in_channels=180, out_channels=277, stride=1, kernel_size=1)
+        )
 
     def forward(self, inputs, cond_inputs=None, mode='direct', method="reshaped normal", epoch=0):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
-            gamma = self.trunk(h)
+            gamma, theta = self.trunk(h).chunk(2, 1)  #
             gamma = torch.sigmoid(gamma)
 
-            pred = self.net(inputs.view(-1, 1, 25, 25))  # shape=(batchsize, 277, 25, 25)
-            nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 1, 625)
+            pred = self.conv1d(theta.view(-1,1,625))
+            # pred = self.net(inputs.view(-1, 1, 25, 25))  # shape=(batchsize, 277, 25, 25)
+            nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 625)
 
             ll = torch.where(inputs > 0,
                              (gamma + 1e-10).log() - nll_positive,
@@ -615,22 +620,37 @@ class MixtureDiscreteMADE(nn.Module):
             return ll
 
         else:
-            x = torch.zeros_like(inputs).view(-1, 1, 25, 25)
-            # nonzeros = torch.Tensor(277, 1, 25, 25).cuda()
-            with torch.no_grad():
-                for i in range(25):
-                    for j in range(25):
-                        # sample gamma
-                        h = self.joiner(x.view(-1, 625), cond_inputs)
-                        gamma = self.trunk(h)
-                        gamma = torch.sigmoid(gamma[:, i*25+j])
-                        z = Bernoulli(probs=gamma).sample()
+            # x = torch.zeros_like(inputs).view(-1, 1, 25, 25)
+            # # nonzeros = torch.Tensor(277, 1, 25, 25).cuda()
+            # with torch.no_grad():
+            #     for i in range(25):
+            #         for j in range(25):
+            #             # sample gamma
+            #             h = self.joiner(x.view(-1, 625), cond_inputs)
+            #             gamma, theta = self.trunk(h).chunk(2, 1)   #
+            #             gamma = torch.sigmoid(gamma[:, i*25+j])
+            #             z = Bernoulli(probs=gamma).sample()
+            #
+            #             # sample non zeros
+            #             # out = self.net(x)
+            #             out = self.conv1d(theta.view(-1,1,625)).view(-1, 277, 25, 25)
+            #             probs = F.softmax(out[:, :, i, j], dim=1).data  # shape=(batchsize, 277)
+            #             nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
+            #             x[:, 0, i, j] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
 
-                        # sample non zeros
-                        out = self.net(x)
-                        probs = F.softmax(out[:, :, i, j]).data  # shape=(batchsize, 277)
-                        nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
-                        x[:, 0, i, j] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+            x = torch.zeros_like(inputs)
+            with torch.no_grad():
+                for i in range(625):
+                    h = self.joiner(x.view(-1, 625), cond_inputs)
+                    gamma, theta = self.trunk(h).chunk(2, 1)  #
+                    gamma = torch.sigmoid(gamma[:, i])
+                    z = Bernoulli(probs=gamma).sample()
+
+                    out = self.conv1d(theta.view(-1,1,625))
+                    probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
+                    nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
+                    x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+
 
             return x
 

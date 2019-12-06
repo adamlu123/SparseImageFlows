@@ -3,7 +3,7 @@ import copy
 import math
 import sys
 import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1, 2'
 import pickle as pkl
 import time
 import numpy as np
@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser(description='PyTorch Flows')
 parser.add_argument(
     '--batch-size',
     type=int,
-    default=1000,
+    default=1024,
     help='input batch size for training (default: 100)')
 parser.add_argument(
     '--test-batch-size',
@@ -45,7 +45,7 @@ parser.add_argument(
     default=1000,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
-    '--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
+    '--lr', type=float, default=0.005, help='learning rate (default: 0.0001)')
 parser.add_argument(
     '--dataset',
     default='JetImages',
@@ -72,7 +72,7 @@ parser.add_argument(
 parser.add_argument(
     '--log-interval',
     type=int,
-    default=1000,
+    default=4096,
     help='how many batches to wait before logging training status')
 parser.add_argument(
     '--jet_images',
@@ -100,15 +100,13 @@ parser.add_argument(
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda:0" if args.cuda else "cpu")
+device = torch.device("cuda" if args.cuda else "cpu")
 
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
-
-
 
 
 if args.jet_images == True:
@@ -266,9 +264,13 @@ for module in model.modules():
             nn.init.uniform_(module.bias, a=0.0, b=1.0)  # uniform init of bias to avoid zero in alpha
             # module.bias.data.fill_(0)
 
-model.to(device)
+model = model.cuda()
+if torch.cuda.device_count() > 1:
+    print("Let's use", torch.cuda.device_count(), "GPUs!")
+    model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
+# scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[5, 10, 15], gamma=0.1, last_epoch=-1)
 
 # writer = SummaryWriter(comment=args.flow + "_" + args.dataset)
 global_step = 0
@@ -289,20 +291,20 @@ def train(epoch):
                 cond_data = None
 
             data = data[0]
-        data = data.to(device)
+        data = data.cuda()
         optimizer.zero_grad()
-        loss = -model.log_probs(data).mean()
-        gamma = model._modules['0'].gamma
-        mu = model._modules['0'].mu
-        log_std = model._modules['0'].log_std
-        u = model.u
-        log_jacob = model.log_jacob
+        loss = -model.module.log_probs(data).mean()
+        gamma = model.module._modules['0'].gamma
+        # mu = model._modules['0'].mu
+        # log_std = model._modules['0'].log_std
+        # u = model.u
+        # log_jacob = model.log_jacob
         if batch_idx % args.log_interval == 0:
             print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
-            print('mu min:{}, mu max:{}, mu mean:{}'.format(mu.min(), mu.max(), mu.mean()))
-            print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
-            print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
-            print('log_jacob min:{}, max:{}, mean:{}'.format(log_jacob.min(), log_jacob.max(), log_jacob.mean()))
+            # print('mu min:{}, mu max:{}, mu mean:{}'.format(mu.min(), mu.max(), mu.mean()))
+            # print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
+            # print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
+            # print('log_jacob min:{}, max:{}, mean:{}'.format(log_jacob.min(), log_jacob.max(), log_jacob.mean()))
         train_loss += loss.item()
         loss.backward()
         optimizer.step()
@@ -311,6 +313,7 @@ def train(epoch):
         pbar.set_description('Train, Log likelihood in nats: {:.6f}'.format(
             -train_loss / (batch_idx + 1)))
     pbar.close()
+    # scheduler.step()
         # writer.add_scalar('training/loss', loss.item(), global_step)
         # global_step += 1
 
@@ -335,11 +338,11 @@ dist_list = []
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 20 == 0:
+    if epoch % 5 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.sample(num_samples=1000, input_size=image_size**2)
+        samples = model.module.sample(num_samples=1000, input_size=image_size**2)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
@@ -348,7 +351,7 @@ for epoch in range(args.epochs):
         #     f.write(str(dist) + ', \n')
 
 
-        if epoch % 20 == 0:
+        if epoch % 5 == 0:
             # distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
             # torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))

@@ -5,7 +5,6 @@ from tqdm import tqdm, trange
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-# import torch.cuda as cuda
 from torch.autograd import Variable
 # from torchvision.utils import save_image
 from models import PixelCNN
