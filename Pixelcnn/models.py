@@ -9,8 +9,7 @@ class MaskedConv2d(nn.Conv2d):
             c_in, c_out, k_size, stride, pad, bias=False)
         assert mask_type in ['A', 'B']
         self.mask_type = mask_type
-        ch_out, ch_in, height, width = self.weight.size()
-
+        # ch_out, ch_in, height, width = self.weight.size()
         # Mask
         #         -------------------------------------
         #        |  1       1       1       1       1 |
@@ -21,17 +20,22 @@ class MaskedConv2d(nn.Conv2d):
         #         -------------------------------------
         #  index    0       1     W//2    W//2+1
 
-        mask = torch.ones(ch_out, ch_in, height, width)
-        if mask_type == 'A':
-            # First Convolution Only
-            # => Restricting connections to
-            #    already predicted neighborhing channels in current pixel
-            mask[:, :, height // 2, width // 2:] = 0
-            mask[:, :, height // 2 + 1:] = 0
-        else:
-            mask[:, :, height // 2, width // 2 + 1:] = 0
-            mask[:, :, height // 2] = 0
-        self.register_buffer('mask', mask)
+        # mask = torch.ones(ch_out, ch_in, height, width)
+        # if mask_type == 'A':
+        #     # First Convolution Only
+        #     # => Restricting connections to
+        #     #    already predicted neighborhing channels in current pixel
+        #     mask[:, :, height // 2, width // 2:] = 0
+        #     mask[:, :, height // 2 + 1:] = 0
+        # else:
+        #     mask[:, :, height // 2, width // 2 + 1:] = 0
+        #     mask[:, :, height // 2] = 0
+        # self.register_buffer('mask', mask)
+        self.register_buffer('mask', self.weight.data.clone())
+        _, _, kH, kW = self.weight.size()
+        self.mask.fill_(1)
+        self.mask[:, :, kH // 2, kW // 2 + (mask_type == 'B'):] = 0
+        self.mask[:, :, kH // 2 + 1:] = 0
 
     def forward(self, x):
         self.weight.data *= self.mask
@@ -91,11 +95,11 @@ class PixelCNN(nn.Module):
             nn.Conv2d(imagesize, n_channel * discrete_channel, kernel_size=1, stride=1, padding=0))
 
         # point mass inference
-        self.linearA = maskAConv(c_in=1, c_out=1, k_size=1, stride=1, pad=3)
-        linearB = []
-        for i in range(3):
-            linearB.append(MaskedConv2d('B', c_in=1, c_out=1, k_size=1, stride=1, pad=3))
-        self.linearB = nn.Sequential(*linearB)
+        # self.linearA = maskAConv(c_in=1, c_out=1, k_size=1, stride=1, pad=3)
+        # linearB = []
+        # for i in range(3):
+        #     linearB.append(MaskedConv2d('B', c_in=1, c_out=1, k_size=1, stride=1, pad=3))
+        # self.linearB = nn.Sequential(*linearB)
 
 
     def forward(self, x):
@@ -109,10 +113,12 @@ class PixelCNN(nn.Module):
 
         # [batch_size, 2h, 25, 25]
         x = self.MaskAConv(x)
-        delta = self.linearA(x)
+        # delta = self.linearA(x)
+
         # [batch_size, 2h, 25, 25]
         x = self.MaskBConv(x)
-        delta = self.linearB(delta)
+        # delta = self.linearB(delta)
+
         # [batch_size, 1x276, 25, 25]
         x = self.out(x)
 

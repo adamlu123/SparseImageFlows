@@ -244,8 +244,9 @@ elif args.flow == 'maf-split-glow':
             fnn.InvertibleMM(num_inputs)
         ]
 elif args.flow == 'mixture-maf':
-
-    modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
+    # modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
+    #                                   act=args.activation, num_latent_layer=args.latent)]
+    modules += [fnn.MixtureDiscreteMADE(num_inputs, num_hidden, num_cond_inputs,
                                       act=args.activation, num_latent_layer=args.latent)]
     # for _ in range(args.num_blocks):
     #     modules += [

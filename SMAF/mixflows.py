@@ -280,7 +280,6 @@ class MixtureNormalMADE(nn.Module):
                                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
                 # ll += discrete_mass(mu.view(-1,25,25)) + discrete_pt(mu.view(-1,25,25))
 
-
             # ll using truncated normal
             elif method == "truncated normal":
                 ll = torch.where(inputs > 0,
@@ -375,12 +374,15 @@ class FlowSequential(nn.Sequential):
                     logdets += logdet
                     return logdets
                 elif isinstance(module, MixtureNormalMADE):
-                    inputs, logdet, gamma = module(inputs, cond_inputs, mode)
+                    inputs, logdet, ll = module(inputs, cond_inputs, mode)
                     logdets += logdet
                 elif isinstance(module, MADE):
                     inputs, logdet = module(inputs, cond_inputs, mode)
                     logdets += logdet
-            return inputs, logdets, gamma
+                elif isinstance(module, MixtureDiscreteMADE):
+                    ll = module(inputs, cond_inputs, mode)
+                    return ll
+            return inputs, logdets, ll
         else:
             for module in reversed(self._modules.values()):
                 inputs = module(inputs, cond_inputs, mode)
@@ -391,10 +393,9 @@ class FlowSequential(nn.Sequential):
             log_probs = self(inputs)
             return (log_probs).sum(-1, keepdim=True)
         else:
-            u, log_jacob, ll = self(inputs)
-            self.log_jacob = log_jacob
-            self.u = u
-            #
+            ll = self(inputs)
+            self.log_jacob = torch.tensor(0.)
+            self.u = torch.tensor(0.)
             # log_probs = (-0.5 * u ** 2 - 0.5 * math.log(2 * math.pi))  #.sum(-1, keepdim=True)
             # normal_log_prob = (log_probs + log_jacob)  #.sum(-1, keepdim=True)
             # ll = torch.where(inputs > 0,
@@ -527,5 +528,110 @@ def discrete_pt(jet_image):
     Px = torch.sum(jet_image * torch.cos(phi), dim=(1, 2))
     Py = torch.sum(jet_image * torch.sin(phi), dim=(1, 2))
     return torch.sqrt(Px**2 + Py**2)
+
+
+
+
+class MaskedConv2d(nn.Conv2d):
+    def __init__(self, mask_type, *args, **kwargs):
+        super(MaskedConv2d, self).__init__(*args, **kwargs)
+        assert mask_type in {'A', 'B'}
+        self.register_buffer('mask', self.weight.data.clone())
+        _, _, kH, kW = self.weight.size()
+        self.mask.fill_(1)
+        self.mask[:, :, kH // 2, kW // 2 + (mask_type == 'B'):] = 0
+        self.mask[:, :, kH // 2 + 1:] = 0
+
+    def forward(self, x):
+        self.weight.data *= self.mask
+        return super(MaskedConv2d, self).forward(x)
+
+
+class MixtureDiscreteMADE(nn.Module):
+    """ An implementation of mxiture of Dirac delta and normal: MADE structure
+    (https://arxiv.org/abs/1502.03509s).
+    """
+
+    def __init__(self,
+                 num_inputs,
+                 num_hidden,
+                 num_cond_inputs=None,
+                 act='relu',
+                 num_latent_layer=2):
+        super(MixtureDiscreteMADE, self).__init__()
+
+        activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
+        act_func = activations[act]
+
+        input_mask = get_mask(
+            num_inputs, num_hidden, num_inputs, mask_type='input')
+        hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
+        output_mask = get_mask(
+            num_hidden, num_inputs, num_inputs, mask_type='output')
+
+        self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
+                                      num_cond_inputs)
+
+        latent_modules = []
+        for i in range(num_latent_layer):
+            latent_modules.append(act_func())
+            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
+                                                   hidden_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs,
+                                                   output_mask))
+        self.trunk = nn.Sequential(*latent_modules)
+
+        fm = 64
+        self.net = nn.Sequential(
+        MaskedConv2d('A', 1,  fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
+        nn.Conv2d(fm, 277, 1))
+
+
+    def forward(self, inputs, cond_inputs=None, mode='direct', method="reshaped normal", epoch=0):
+        if mode == 'direct':
+            h = self.joiner(inputs, cond_inputs)
+            gamma = self.trunk(h)
+            gamma = torch.sigmoid(gamma)
+
+            pred = self.net(inputs.view(-1, 1, 25, 25))  # shape=(batchsize, 277, 25, 25)
+            nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 1, 625)
+
+            ll = torch.where(inputs > 0,
+                             (gamma + 1e-10).log() + nll_positive,
+                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+
+            self.gamma = gamma.detach().cpu().numpy()
+
+            self.mu = torch.tensor(0.)
+            self.log_std = torch.tensor(0.)
+
+            return ll
+
+        else:
+            x = torch.zeros_like(inputs).view(-1, 25, 25)
+            nonzeros = torch.Tensor(277, 1, 25, 25).cuda()
+            with torch.no_grad():
+                for i in range(25):
+                    for j in range(25):
+                        # sample gamma
+                        h = self.joiner(x, cond_inputs)
+                        gamma = self.trunk(h)
+                        gamma = torch.sigmoid(gamma[:, i*25+j])
+                        z = Bernoulli(probs=gamma).sample()
+
+                        # sample non zeros
+                        out = self.net(nonzeros)
+                        probs = F.softmax(out[:, :, i, j]).data
+                        nonzeros[:, :, i, j] = torch.multinomial(probs, 1).float()
+                        x[:, i, j] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+
+            return x
 
 
