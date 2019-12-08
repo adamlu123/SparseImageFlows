@@ -19,14 +19,14 @@ def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     if mask_type == 'input':
         in_degrees = torch.arange(in_features) % in_flow_features
     else:
-        in_degrees = torch.arange(in_features) % (in_flow_features - 1)
-        # in_degrees = torch.arange(in_features) % in_flow_features
+        # in_degrees = torch.arange(in_features) % (in_flow_features - 1)
+        in_degrees = torch.arange(in_features) % in_flow_features
 
     if mask_type == 'output':
         out_degrees = torch.arange(out_features) % in_flow_features - 1
     else:
-        out_degrees = torch.arange(out_features) % (in_flow_features - 1)
-        # out_degrees = torch.arange(out_features) % in_flow_features
+        # out_degrees = torch.arange(out_features) % (in_flow_features - 1)
+        out_degrees = torch.arange(out_features) % in_flow_features
 
     return (out_degrees.unsqueeze(-1) >= in_degrees.unsqueeze(0)).float()
 
@@ -581,63 +581,40 @@ class MixtureDiscreteMADE(nn.Module):
                                                    output_mask))
         self.trunk = nn.Sequential(*latent_modules)
 
-        # fm = 64
-        # self.net = nn.Sequential(
-        # MaskedConv2d('A', 1,  fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # MaskedConv2d('B', fm, fm, 7, 1, 3, bias=False), nn.BatchNorm2d(fm), nn.ReLU(True),
-        # nn.Conv2d(fm, 277, 1))
         self.conv1d = nn.Sequential(
-            nn.Conv1d(in_channels=1, out_channels=90, stride=1, kernel_size=1), nn.BatchNorm1d(90), nn.Sigmoid(),
-            nn.Conv1d(in_channels=90, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.Sigmoid(),
+            nn.Conv1d(in_channels=1, out_channels=90, stride=1, kernel_size=1), nn.BatchNorm1d(90), nn.ReLU(),
+            nn.Conv1d(in_channels=90, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
+            nn.Conv1d(in_channels=180, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
+            nn.Conv1d(in_channels=180, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
             nn.Conv1d(in_channels=180, out_channels=277, stride=1, kernel_size=1)
         )
+        self.conv1d_gamma = nn.Conv1d(in_channels=1, out_channels=1, stride=1, kernel_size=1)
 
     def forward(self, inputs, cond_inputs=None, mode='direct', method="reshaped normal", epoch=0):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
-            gamma, theta = self.trunk(h).chunk(2, 1)  #
+            gamma, theta = self.trunk(h).chunk(2, 1)
+            gamma = self.conv1d_gamma(gamma.view(-1, 1, 625))
             gamma = torch.sigmoid(gamma)
 
             pred = self.conv1d(theta.view(-1,1,625))
-            # pred = self.net(inputs.view(-1, 1, 25, 25))  # shape=(batchsize, 277, 25, 25)
+            # nll_positive = torch.where(inputs > 0,
+            #                            F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none"),
+            #                            torch.zeros_like(inputs))
             nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 625)
 
             ll = torch.where(inputs > 0,
-                             (gamma + 1e-10).log() - nll_positive,
-                             (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                             0.01*(gamma + 1e-10).log() - nll_positive,
+                             0.01*(1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            # ll = -nll_positive
 
             self.gamma = gamma.detach().cpu().numpy()
-
             self.mu = torch.tensor(0.)
             self.log_std = torch.tensor(0.)
 
             return ll
 
         else:
-            # x = torch.zeros_like(inputs).view(-1, 1, 25, 25)
-            # # nonzeros = torch.Tensor(277, 1, 25, 25).cuda()
-            # with torch.no_grad():
-            #     for i in range(25):
-            #         for j in range(25):
-            #             # sample gamma
-            #             h = self.joiner(x.view(-1, 625), cond_inputs)
-            #             gamma, theta = self.trunk(h).chunk(2, 1)   #
-            #             gamma = torch.sigmoid(gamma[:, i*25+j])
-            #             z = Bernoulli(probs=gamma).sample()
-            #
-            #             # sample non zeros
-            #             # out = self.net(x)
-            #             out = self.conv1d(theta.view(-1,1,625)).view(-1, 277, 25, 25)
-            #             probs = F.softmax(out[:, :, i, j], dim=1).data  # shape=(batchsize, 277)
-            #             nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
-            #             x[:, 0, i, j] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-
             x = torch.zeros_like(inputs)
             with torch.no_grad():
                 for i in range(625):
@@ -650,7 +627,7 @@ class MixtureDiscreteMADE(nn.Module):
                     probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
                     nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
                     x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-
+                    # x[:, i] = nonzeros
 
             return x
 

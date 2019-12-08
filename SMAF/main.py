@@ -3,7 +3,7 @@ import copy
 import math
 import sys
 import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1, 2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
 import pickle as pkl
 import time
 import numpy as np
@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser(description='PyTorch Flows')
 parser.add_argument(
     '--batch-size',
     type=int,
-    default=1024,
+    default=16,
     help='input batch size for training (default: 100)')
 parser.add_argument(
     '--test-batch-size',
@@ -93,7 +93,7 @@ parser.add_argument(
         help="activation"
     )
 parser.add_argument(
-        "--latent", type=int, default=2,
+        "--latent", type=int, default=1,
         help="number of latent layer in the flow"
     )
 
@@ -184,7 +184,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 1024
+    'JetImages': 625
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
@@ -270,10 +270,11 @@ if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
-# scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[5, 10, 15], gamma=0.1, last_epoch=-1)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 100, 150], gamma=0.5, last_epoch=-1)
 
 # writer = SummaryWriter(comment=args.flow + "_" + args.dataset)
 global_step = 0
+
 
 
 def train(epoch):
@@ -313,7 +314,7 @@ def train(epoch):
         pbar.set_description('Train, Log likelihood in nats: {:.6f}'.format(
             -train_loss / (batch_idx + 1)))
     pbar.close()
-    # scheduler.step()
+    scheduler.step()
         # writer.add_scalar('training/loss', loss.item(), global_step)
         # global_step += 1
 
@@ -338,20 +339,20 @@ dist_list = []
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 5 == 0:
+    if epoch % 10 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.module.sample(num_samples=1000, input_size=image_size**2)
+        samples = model.module.sample(num_samples=200, input_size=image_size**2)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:1000], samples, image_size=image_size)
+        dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:samples.shape[0]], samples, image_size=image_size)
         # with open(args.result_dir + '/distance_list.txt', 'a') as f:
         #     f.write(str(dist) + ', \n')
 
 
-        if epoch % 5 == 0:
+        if epoch % 50 == 0:
             # distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
             # torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
