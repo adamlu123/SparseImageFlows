@@ -620,7 +620,7 @@ class MixtureDiscreteMADE(nn.Module):
                 for i in range(625):
                     h = self.joiner(x.view(-1, 625), cond_inputs)
                     gamma, theta = self.trunk(h).chunk(2, 1)  #
-                    gamma = self.conv1d_gamma(gamma.view(-1, 1, 625))
+                    gamma = self.conv1d_gamma(gamma.view(-1, 1, 625)).squeeze()
                     gamma = torch.sigmoid(gamma[:, i])
                     z = Bernoulli(probs=gamma).sample()
 
@@ -704,16 +704,15 @@ class ConditionalMixtureDiscreteMADE(nn.Module):
                 for i in range(627):
                     h = self.joiner(x, cond_inputs)
                     gamma, theta = self.trunk(h).chunk(2, 1)  #
-                    gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625))
-                    gamma = torch.sigmoid(gamma[:, i])
-                    z = Bernoulli(probs=gamma).sample()
-
-                    out = self.conv1d(theta.view(-1,1,627))  # shape=(batchsize, 300, 625)
+                    out = self.conv1d(theta.view(-1, 1, 627))  # shape=(batchsize, 300, 625)
                     probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
                     nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
                     if i < 2:
                         x[:, i] = nonzeros
-                    else:
+                    if i >= 2:
+                        gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625)).squeeze()
+                        gamma = torch.sigmoid(gamma[:, i-2])
+                        z = Bernoulli(probs=gamma).sample()
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-            return x
+            return x[:, 2:]
 

@@ -349,7 +349,7 @@ for epoch in range(args.epochs):
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset.reshape(-1, image_size, image_size)[:samples.shape[0]], samples, image_size=image_size)
+        dist = get_distance(train_dataset[:samples.shape[0], 2:].reshape(-1, image_size, image_size), samples, image_size=image_size)
         # with open(args.result_dir + '/distance_list.txt', 'a') as f:
         #     f.write(str(dist) + ', \n')
 
