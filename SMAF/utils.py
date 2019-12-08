@@ -79,6 +79,17 @@ def load_data_LAGAN(subset='signal'):
         print('return all')
         return image
 
+def lagan_disretized_loader(subset='concatenate'):
+    img_dir = "/baldig/physicsprojects/lagan"
+    with h5py.File(img_dir + '/discretized_lagan.h5', 'r') as f:
+        image = np.asarray(f[subset][:10000])
+    print('image shape', image.shape)
+    return image
+
+
+
+
+
 def load_jet_image(num=10000, signal=0):
     img_dir = '/baldig/physicsprojects/jetvision/data/download4/datasets/test_no_pile_5000000.h5'
     with h5py.File(img_dir, 'r') as f:

@@ -379,7 +379,7 @@ class FlowSequential(nn.Sequential):
                 elif isinstance(module, MADE):
                     inputs, logdet = module(inputs, cond_inputs, mode)
                     logdets += logdet
-                elif isinstance(module, MixtureDiscreteMADE):
+                elif isinstance(module, MixtureDiscreteMADE) or isinstance(module, ConditionalMixtureDiscreteMADE):
                     ll = module(inputs, cond_inputs, mode)
                     return ll
             return inputs, logdets, ll
@@ -548,7 +548,7 @@ class MaskedConv2d(nn.Conv2d):
 
 
 class MixtureDiscreteMADE(nn.Module):
-    """ An implementation of mxiture of Dirac delta and normal: MADE structure
+    """ An implementation of mxiture of Dirac delta and multinomial: MADE structure
     (https://arxiv.org/abs/1502.03509s).
     """
 
@@ -590,7 +590,7 @@ class MixtureDiscreteMADE(nn.Module):
         )
         self.conv1d_gamma = nn.Conv1d(in_channels=1, out_channels=1, stride=1, kernel_size=1)
 
-    def forward(self, inputs, cond_inputs=None, mode='direct', method="reshaped normal", epoch=0):
+    def forward(self, inputs, cond_inputs=None, mode='direct', epoch=0):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, theta = self.trunk(h).chunk(2, 1)
@@ -604,8 +604,8 @@ class MixtureDiscreteMADE(nn.Module):
             nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 625)
 
             ll = torch.where(inputs > 0,
-                             0.01*(gamma + 1e-10).log() - nll_positive,
-                             0.01*(1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                             0.1*(gamma + 1e-10).log() - nll_positive,
+                             0.1*(1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
             # ll = -nll_positive
 
             self.gamma = gamma.detach().cpu().numpy()
@@ -620,6 +620,7 @@ class MixtureDiscreteMADE(nn.Module):
                 for i in range(625):
                     h = self.joiner(x.view(-1, 625), cond_inputs)
                     gamma, theta = self.trunk(h).chunk(2, 1)  #
+                    gamma = self.conv1d_gamma(gamma.view(-1, 1, 625))
                     gamma = torch.sigmoid(gamma[:, i])
                     z = Bernoulli(probs=gamma).sample()
 
@@ -631,4 +632,88 @@ class MixtureDiscreteMADE(nn.Module):
 
             return x
 
+class ConditionalMixtureDiscreteMADE(nn.Module):
+    """ An implementation of conditional mxiture of Dirac delta and multinomial: MADE structure, every pixel is
+        dependent on its mass and pt value
+
+    (https://arxiv.org/abs/1502.03509s).
+    """
+
+    def __init__(self,
+                 num_inputs,
+                 num_hidden,
+                 num_cond_inputs=None,
+                 act='relu',
+                 num_latent_layer=2):
+        super(ConditionalMixtureDiscreteMADE, self).__init__()
+
+        activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
+        act_func = activations[act]
+
+        input_mask = get_mask(
+            num_inputs, num_hidden, num_inputs, mask_type='input')
+        hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
+        output_mask = get_mask(
+            num_hidden, num_inputs * 2, num_inputs, mask_type='output')
+
+        self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
+                                      num_cond_inputs)
+
+        latent_modules = []
+        for i in range(num_latent_layer):
+            latent_modules.append(act_func())
+            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
+                                                   hidden_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 2,
+                                                   output_mask))
+        self.trunk = nn.Sequential(*latent_modules)
+
+        self.conv1d = nn.Sequential(
+            nn.Conv1d(in_channels=1, out_channels=90, stride=1, kernel_size=1), nn.BatchNorm1d(90), nn.ReLU(),
+            nn.Conv1d(in_channels=90, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
+            nn.Conv1d(in_channels=180, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
+            nn.Conv1d(in_channels=180, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
+            nn.Conv1d(in_channels=180, out_channels=300, stride=1, kernel_size=1)
+        )
+        self.conv1d_gamma = nn.Conv1d(in_channels=1, out_channels=1, stride=1, kernel_size=1)
+
+    def forward(self, inputs, cond_inputs=None, mode='direct', epoch=0):
+        if mode == 'direct':
+            h = self.joiner(inputs, cond_inputs)
+            gamma, theta = self.trunk(h).chunk(2, 1)
+            gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625))
+            gamma = torch.sigmoid(gamma)
+
+            pred = self.conv1d(theta.view(-1,1,627))
+            nll_positive = F.cross_entropy(pred[:, :, 2:], inputs[:, 2:].long(), reduction="none")  # shape=(batchsize, 625)
+
+            ll = torch.where(inputs[:, 2:] > 0,
+                             0.1*(gamma + 1e-10).log() - nll_positive,
+                             0.1*(1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            ll = ll - F.cross_entropy(pred[:, :, :2].view(-1, 300, 2), inputs[:, :2].long())
+
+            self.gamma = gamma.detach().cpu().numpy()
+            self.mu = torch.tensor(0.)
+            self.log_std = torch.tensor(0.)
+
+            return ll
+
+        else:
+            x = torch.zeros_like(inputs)
+            with torch.no_grad():
+                for i in range(627):
+                    h = self.joiner(x, cond_inputs)
+                    gamma, theta = self.trunk(h).chunk(2, 1)  #
+                    gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625))
+                    gamma = torch.sigmoid(gamma[:, i])
+                    z = Bernoulli(probs=gamma).sample()
+
+                    out = self.conv1d(theta.view(-1,1,627))  # shape=(batchsize, 300, 625)
+                    probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
+                    nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
+                    if i < 2:
+                        x[:, i] = nonzeros
+                    else:
+                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+            return x
 

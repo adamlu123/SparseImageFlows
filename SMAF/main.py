@@ -8,7 +8,7 @@ import pickle as pkl
 import time
 import numpy as np
 import utils
-from utils import load_data_LAGAN, load_jet_image
+from utils import load_data_LAGAN, load_jet_image, lagan_disretized_loader
 
 import torch
 import torch.nn as nn
@@ -111,8 +111,10 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    train_dataset = load_data_LAGAN(subset=args.subset)
-    train_dataset = train_dataset.reshape(-1, 625)
+    train_dataset = lagan_disretized_loader(subset='concatenate')
+    train_dataset = train_dataset.reshape(-1, 627)
+    # train_dataset = load_data_LAGAN(subset=args.subset)
+    # train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 
     # train_dataset = load_jet_image(num=50000, signal=1)
@@ -184,7 +186,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 625
+    'JetImages': 627
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
@@ -244,7 +246,7 @@ elif args.flow == 'maf-split-glow':
 elif args.flow == 'mixture-maf':
     # modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
     #                                   act=args.activation, num_latent_layer=args.latent)]
-    modules += [fnn.MixtureDiscreteMADE(num_inputs, num_hidden, num_cond_inputs,
+    modules += [fnn.ConditionalMixtureDiscreteMADE(num_inputs, num_hidden, num_cond_inputs,
                                       act=args.activation, num_latent_layer=args.latent)]
     # for _ in range(args.num_blocks):
     #     modules += [
@@ -292,7 +294,7 @@ def train(epoch):
                 cond_data = None
 
             data = data[0]
-        data = data.cuda()
+        data = data.cuda().float()
         optimizer.zero_grad()
         loss = -model.module.log_probs(data).mean()
         gamma = model.module._modules['0'].gamma
@@ -343,7 +345,7 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.module.sample(num_samples=200, input_size=image_size**2)
+        samples = model.module.sample(num_samples=200, input_size=image_size**2+2)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
