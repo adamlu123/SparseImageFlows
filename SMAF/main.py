@@ -3,7 +3,7 @@ import copy
 import math
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
 import pickle as pkl
 import time
 import numpy as np
@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser(description='PyTorch Flows')
 parser.add_argument(
     '--batch-size',
     type=int,
-    default=16,
+    default=128,
     help='input batch size for training (default: 100)')
 parser.add_argument(
     '--test-batch-size',
@@ -349,10 +349,9 @@ for epoch in range(args.epochs):
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset[:samples.shape[0], 2:].reshape(-1, image_size, image_size), samples, image_size=image_size)
-        # with open(args.result_dir + '/distance_list.txt', 'a') as f:
-        #     f.write(str(dist) + ', \n')
-
+        dist = get_distance(train_dataset[:samples.shape[0], 2:].reshape(-1, image_size, image_size), samples[:,2:], image_size=image_size)
+        with open(args.result_dir + '/distance_list.txt', 'a') as f:
+            f.write(str(dist) + ', \n')
 
         if epoch % 50 == 0:
             # distance = np.asarray(dist_list)

@@ -681,8 +681,8 @@ class ConditionalMixtureDiscreteMADE(nn.Module):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, theta = self.trunk(h).chunk(2, 1)
-            gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625))
-            gamma = torch.sigmoid(gamma)
+            # gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625))
+            gamma = torch.sigmoid(gamma[:, 2:])
 
             pred = self.conv1d(theta.view(-1,1,627))
             nll_positive = F.cross_entropy(pred[:, :, 2:], inputs[:, 2:].long(), reduction="none")  # shape=(batchsize, 625)
@@ -710,9 +710,9 @@ class ConditionalMixtureDiscreteMADE(nn.Module):
                     if i < 2:
                         x[:, i] = nonzeros
                     if i >= 2:
-                        gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625)).squeeze()
-                        gamma = torch.sigmoid(gamma[:, i-2])
+                        # gamma = self.conv1d_gamma(gamma[:, 2:].view(-1, 1, 625)).squeeze()
+                        gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-            return x[:, 2:]
+            return x  # x[:, 2:]
 
