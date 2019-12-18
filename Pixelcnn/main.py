@@ -31,7 +31,7 @@ class Solver(object):
         print(self.net, '\n')
 
         if self.config.mode == 'train':
-            self.optimizer = self.config.optimizer(self.net.parameters())
+            self.optimizer = self.config.optimizer(self.net.parameters(), lr=0.005, weight_decay=1e-6)
             self.loss_fn = nn.CrossEntropyLoss()
 
     def train(self):
@@ -54,7 +54,7 @@ class Solver(object):
                 # [batch_size, 3, 32, 32]
                 image = Variable(image).cuda()
 
-                # [batch_size, 3, 32, 32, 256]
+                # [batch_size, 3, 32, 32, 277]
                 logit = self.net(image)
                 logit = logit.contiguous()
                 logit = logit.view(-1, quant_bins)
@@ -77,51 +77,51 @@ class Solver(object):
 
             epoch_loss = np.mean(self.batch_loss_history)
             tqdm.write(f'Epoch Loss: {epoch_loss:.2f}')
-            if epoch_i % 5 == 0:
-                torch.save(self.net.state_dict(), self.config.ckpt_dir.joinpath('pixelcnn_{}.pt'.format(epoch_i)))
-                print('\n', 'model saved at epoch', epoch_i)
+            # if epoch_i % 5 == 0:
+            #     torch.save(self.net.state_dict(), self.config.ckpt_dir.joinpath('pixelcnn_{}.pt'.format(epoch_i)))
+            #     print('\n', 'model saved at epoch', epoch_i)
             print('\n', 'start to sample')
             self.sample(epoch_i)
             print('\n', 'finish sampling')
 
-    def test(self, epoch_i):
-        """Compute error on test set"""
-
-        test_errors = []
-        # cuda.synchronize()
-        start = time.time()
-
-        self.net.eval()
-
-        for image, label in self.test_loader:
-
-            # [batch_size, channel, height, width]
-            image = Variable(image.cuda(async=True), volatile=True)
-
-            # [batch_size, channel, height, width, 256]
-            logit = self.net(image).contiguous()
-
-            # [batch_size x channel x height x width, 256]
-            logit = logit.view(-1, 256)
-
-            # [batch_size x channel x height x width]
-            target = Variable((image.data.view(-1) * 255).long())
-
-            loss = F.cross_entropy(logit, target)
-
-            test_error = float(loss.data)
-            test_errors.append(test_error)
-
-        # cuda.synchronize()
-        time_test = time.time() - start
-        log_string = f'Test done! | It took {time_test:.1f}s | '
-        log_string += f'Test Loss: {np.mean(test_errors):.2f}'
-        tqdm.write(log_string)
+    # def test(self, epoch_i):
+    #     """Compute error on test set"""
+    #
+    #     test_errors = []
+    #     # cuda.synchronize()
+    #     start = time.time()
+    #
+    #     self.net.eval()
+    #
+    #     for image, label in self.test_loader:
+    #
+    #         # [batch_size, channel, height, width]
+    #         image = Variable(image.cuda(async=True), volatile=True)
+    #
+    #         # [batch_size, channel, height, width, 256]
+    #         logit = self.net(image).contiguous()
+    #
+    #         # [batch_size x channel x height x width, 256]
+    #         logit = logit.view(-1, 256)
+    #
+    #         # [batch_size x channel x height x width]
+    #         target = Variable((image.data.view(-1) * 255).long())
+    #
+    #         loss = F.cross_entropy(logit, target)
+    #
+    #         test_error = float(loss.data)
+    #         test_errors.append(test_error)
+    #
+    #     # cuda.synchronize()
+    #     time_test = time.time() - start
+    #     log_string = f'Test done! | It took {time_test:.1f}s | '
+    #     log_string += f'Test Loss: {np.mean(test_errors):.2f}'
+    #     tqdm.write(log_string)
 
     def sample(self, epoch_i):
         """Sampling Images"""
 
-        image_path = str(self.config.ckpt_dir.joinpath(f'epoch-{epoch_i}.png'))
+        image_path = str(self.config.ckpt_dir.joinpath(f'samples_epoch-{epoch_i}.png'))
         tqdm.write(f'Saved sampled images at f{image_path})')
         self.net.eval()
 
@@ -130,17 +130,17 @@ class Solver(object):
         for i in range(25):
             for j in range(25):
 
-                # [batch_size, channel, height, width, 256]
+                # [batch_size, channel=1, height, width, 277]
                 out = self.net(sample)
 
                 # out[:, :, i, j]
                 # => [batch_size, channel, 256]
-                probs = F.softmax(out[:, :, i, j], dim=2).data
+                probs = F.softmax(out[:, 0, i, j, :], dim=1).data
 
                 # Sample single pixel (each channel independently)
                 for k in range(1):  # k # of channels
                     # 0 ~ 255 => 0 ~ 1
-                    pixel = torch.multinomial(probs[:, k], 1).float()  # / quant_bins
+                    pixel = torch.multinomial(probs, 1).float()  # / quant_bins
                     sample[:, k, i, j] = pixel.squeeze()
 
         with open(self.config.ckpt_dir.joinpath(f'samples_epoch-{epoch_i}.pkl'), 'wb') as f:

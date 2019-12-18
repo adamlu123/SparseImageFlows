@@ -3,18 +3,24 @@ from datetime import datetime
 from pathlib import Path
 import pprint
 import torch
+import torch.optim as optim
+import os
+
 project_dir = Path(__file__).resolve().parent
 datasets_dir = project_dir.joinpath('datasets/')
 
 # Where to save checkpoint and log images
 # result_dir = project_dir.joinpath('results/')
-result_dir = Path('/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/lagan_pixelcnn/a1_b5')
+result_dir = Path('/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/lagan_pixelcnn/a1_b3')
 if not result_dir.exists():
     result_dir.mkdir()
 
 
 def get_optimizer(optimizer_name='Adam'):
     """Get optimizer by name"""
+    # if optimizer_name=='Adam':
+    #     optimizer = optim.Adam(model.parameters(), lr=0.005, weight_decay=1e-6)
+    # return optimizer
     # optimizer_name = optimizer_name.capitalize()
     return getattr(torch.optim, optimizer_name)
 
@@ -44,7 +50,7 @@ class BaseConfig(object):
         self.parser.add_argument('--mode', type=str, default='train')
 
         #================ Train ==============#
-        self.parser.add_argument('--batch_size', type=int, default=1024)
+        self.parser.add_argument('--batch_size', type=int, default=128)
         self.parser.add_argument('--n_epochs', type=int, default=200)
         self.parser.add_argument('--optimizer', type=str, default='Adam')
 
@@ -94,10 +100,11 @@ class BaseConfig(object):
 
         if self.mode == 'train':
             # ex) ./results/vae/2017-12-10_10:09:08/
-            time_now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            time_now = datetime.now().strftime('%Y-%m-%d')  # _%H-%M-%S
             self.ckpt_dir = self.model_dir.joinpath(time_now)
 
-            self.ckpt_dir.mkdir()
+            if not os.path.isdir(self.ckpt_dir):
+                self.ckpt_dir.mkdir()
             file_path = self.ckpt_dir.joinpath('config.txt')
             with open(file_path, 'w') as f:
                 f.write('------------ Configurations -------------\n')

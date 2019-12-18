@@ -33,7 +33,7 @@ def get_lagan_loader(subset, batch_size):
     """
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir + '/discretized_lagan.h5', 'r') as f:
-        dataset = np.asarray(f[subset])
+        dataset = np.asarray(f[subset][:10000])
     dataset = torch.tensor(dataset, dtype=torch.float).view((-1, 1, 25, 25))
     # print('finish creating {} data loader! shape: {}'.format(subset, dataset.shape()))
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
