@@ -19,6 +19,7 @@ from tqdm import tqdm
 # from tensorboardX import SummaryWriter
 import datasets
 import mixflows as fnn
+import multiscale_flows as multiscale
 from scipy.stats import wasserstein_distance
 import plot_utils
 
@@ -51,7 +52,7 @@ parser.add_argument(
     default='JetImages',
     help='POWER | GAS | HEPMASS | MINIBONE | BSDS300 | MOONS | JetImages')
 parser.add_argument(
-    '--flow', default='mixture-maf', help='flow to use: maf | realnvp | glow')
+    '--flow', default='multiscale AR', help='flow to use: maf | realnvp | glow')
 parser.add_argument(
     '--no-cuda',
     action='store_true',
@@ -111,8 +112,8 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    train_dataset = lagan_disretized_loader(subset='concatenate')
-    train_dataset = train_dataset.reshape(-1, 627)
+    train_dataset = lagan_disretized_loader(subset='signal')
+    train_dataset = train_dataset.reshape(-1, 625)
     # train_dataset = load_data_LAGAN(subset=args.subset)
     # train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
@@ -121,44 +122,44 @@ if args.jet_images == True:
     # train_dataset = train_dataset.reshape(-1, 1024)
     # image_size = 32
 
-    # train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
+    train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
 
-else:
-    assert args.dataset in [
-        'POWER', 'GAS', 'HEPMASS', 'MINIBONE', 'BSDS300', 'MOONS', 'MNIST'
-    ]
-    dataset = getattr(datasets, args.dataset)()
-
-    if args.cond:
-        assert args.flow in ['maf', 'realnvp'] and args.dataset == 'MNIST', \
-            'Conditional flows are implemented only for maf and MNIST'
-
-        train_tensor = torch.from_numpy(dataset.trn.x)
-        train_labels = torch.from_numpy(dataset.trn.y)
-        train_dataset = torch.utils.data.TensorDataset(train_tensor, train_labels)
-
-        valid_tensor = torch.from_numpy(dataset.val.x)
-        valid_labels = torch.from_numpy(dataset.val.y)
-        valid_dataset = torch.utils.data.TensorDataset(valid_tensor, valid_labels)
-
-        test_tensor = torch.from_numpy(dataset.tst.x)
-        test_labels = torch.from_numpy(dataset.tst.y)
-        test_dataset = torch.utils.data.TensorDataset(test_tensor, test_labels)
-        num_cond_inputs = 10
-    else:
-        train_tensor = torch.from_numpy(dataset.trn.x)
-        train_dataset = torch.utils.data.TensorDataset(train_tensor)
-
-        valid_tensor = torch.from_numpy(dataset.val.x)
-        valid_dataset = torch.utils.data.TensorDataset(valid_tensor)
-
-        test_tensor = torch.from_numpy(dataset.tst.x)
-        test_dataset = torch.utils.data.TensorDataset(test_tensor)
-        num_cond_inputs = None
-
-
+# else:
+#     assert args.dataset in [
+#         'POWER', 'GAS', 'HEPMASS', 'MINIBONE', 'BSDS300', 'MOONS', 'MNIST'
+#     ]
+#     dataset = getattr(datasets, args.dataset)()
+#
+#     if args.cond:
+#         assert args.flow in ['maf', 'realnvp'] and args.dataset == 'MNIST', \
+#             'Conditional flows are implemented only for maf and MNIST'
+#
+#         train_tensor = torch.from_numpy(dataset.trn.x)
+#         train_labels = torch.from_numpy(dataset.trn.y)
+#         train_dataset = torch.utils.data.TensorDataset(train_tensor, train_labels)
+#
+#         valid_tensor = torch.from_numpy(dataset.val.x)
+#         valid_labels = torch.from_numpy(dataset.val.y)
+#         valid_dataset = torch.utils.data.TensorDataset(valid_tensor, valid_labels)
+#
+#         test_tensor = torch.from_numpy(dataset.tst.x)
+#         test_labels = torch.from_numpy(dataset.tst.y)
+#         test_dataset = torch.utils.data.TensorDataset(test_tensor, test_labels)
+#         num_cond_inputs = 10
+#     else:
+#         train_tensor = torch.from_numpy(dataset.trn.x)
+#         train_dataset = torch.utils.data.TensorDataset(train_tensor)
+#
+#         valid_tensor = torch.from_numpy(dataset.val.x)
+#         valid_dataset = torch.utils.data.TensorDataset(valid_tensor)
+#
+#         test_tensor = torch.from_numpy(dataset.tst.x)
+#         test_dataset = torch.utils.data.TensorDataset(test_tensor)
+#         num_cond_inputs = None
+#
+#
 
 train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
@@ -186,14 +187,14 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 627
+    'JetImages': 625
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
 
 modules = []
 
-assert args.flow in ['mixture-maf', 'maf', 'maf-split', 'maf-split-glow', 'realnvp', 'glow']
+assert args.flow in ['multiscale AR', 'mixture-maf', 'maf', 'maf-split', 'maf-split-glow', 'realnvp', 'glow']
 if args.flow == 'glow':
     mask = torch.arange(0, num_inputs) % 2
     mask = mask.to(device).float()
@@ -244,10 +245,9 @@ elif args.flow == 'maf-split-glow':
             fnn.InvertibleMM(num_inputs)
         ]
 elif args.flow == 'mixture-maf':
-    # modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
-    #                                   act=args.activation, num_latent_layer=args.latent)]
-    modules += [fnn.ConditionalMixtureDiscreteMADE(num_inputs, num_hidden, num_cond_inputs,
+    modules += [fnn.MixtureDiscreteMADE(num_inputs, num_hidden, num_cond_inputs,
                                       act=args.activation, num_latent_layer=args.latent)]
+    model = fnn.FlowSequential(*modules)
     # for _ in range(args.num_blocks):
     #     modules += [
     #         fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act='sigmoid'),
@@ -256,8 +256,12 @@ elif args.flow == 'mixture-maf':
     #     ]
     print('flow structure: {}'.format(modules))
 
+elif args.flow == 'multiscale AR':
+    modules += [multiscale.MultiscaleAR(25, num_inputs, [25, 625-25], act=args.activation, num_latent_layer=args.latent)]
+    model = multiscale.FlowSequential(*modules)
+    print('model structure: {}'.format(modules))
 
-model = fnn.FlowSequential(*modules)
+
 
 for module in model.modules():
     if isinstance(module, nn.Linear):
@@ -296,14 +300,16 @@ def train(epoch):
             data = data[0]
         data = data.cuda().float()
         optimizer.zero_grad()
+        # loss = -model(data, mode='direct').mean()
         loss = -model.module.log_probs(data).mean()
-        gamma = model.module._modules['0'].gamma
+        # gamma = model.module._modules['0'].gamma
         # mu = model._modules['0'].mu
         # log_std = model._modules['0'].log_std
         # u = model.u
         # log_jacob = model.log_jacob
-        if batch_idx % args.log_interval == 0:
-            print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
+
+        # if batch_idx % args.log_interval == 0:
+        #     print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
             # print('mu min:{}, mu max:{}, mu mean:{}'.format(mu.min(), mu.max(), mu.mean()))
             # print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
             # print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
@@ -345,11 +351,11 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.module.sample(num_samples=200, input_size=image_size**2+2)
+        samples = model.module.sample(num_samples=200, input_size=image_size**2)
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset[:samples.shape[0], 2:].reshape(-1, image_size, image_size), samples[:,2:], image_size=image_size)
+        dist = get_distance(train_dataset[:samples.shape[0], :].reshape(-1, image_size, image_size), samples[:,:], image_size=image_size)
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 

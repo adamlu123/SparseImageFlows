@@ -233,22 +233,17 @@ class MixtureNormalMADE(nn.Module):
         activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
         act_func = activations[act]
 
-        input_mask = get_mask(
-            num_inputs, num_hidden, num_inputs, mask_type='input')
+        input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type='input')
         hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
-        output_mask = get_mask(
-            num_hidden, num_inputs * 3, num_inputs, mask_type='output')
+        output_mask = get_mask(num_hidden, num_inputs * 3, num_inputs, mask_type='output')
 
-        self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
-                                      num_cond_inputs)
+        self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask, num_cond_inputs)
 
         latent_modules = []
         for i in range(num_latent_layer):
             latent_modules.append(act_func())
-            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
-                                                   hidden_mask))
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3,
-                                                   output_mask))
+            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden, hidden_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, output_mask))
         self.trunk = nn.Sequential(*latent_modules)
 
         # self.trunk = nn.Sequential(act_func(),
@@ -547,11 +542,11 @@ class MaskedConv2d(nn.Conv2d):
         return super(MaskedConv2d, self).forward(x)
 
 
+
 class MixtureDiscreteMADE(nn.Module):
     """ An implementation of mxiture of Dirac delta and multinomial: MADE structure
     (https://arxiv.org/abs/1502.03509s).
     """
-
     def __init__(self,
                  num_inputs,
                  num_hidden,
@@ -563,11 +558,9 @@ class MixtureDiscreteMADE(nn.Module):
         activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
         act_func = activations[act]
 
-        input_mask = get_mask(
-            num_inputs, num_hidden, num_inputs, mask_type='input')
+        input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type='input')
         hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
-        output_mask = get_mask(
-            num_hidden, num_inputs * 2, num_inputs, mask_type='output')
+        output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
 
         self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
                                       num_cond_inputs)
@@ -629,8 +622,8 @@ class MixtureDiscreteMADE(nn.Module):
                     nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
                     x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
                     # x[:, i] = nonzeros
-
             return x
+
 
 class ConditionalMixtureDiscreteMADE(nn.Module):
     """ An implementation of conditional mxiture of Dirac delta and multinomial: MADE structure, every pixel is
