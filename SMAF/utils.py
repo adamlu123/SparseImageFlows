@@ -82,12 +82,9 @@ def load_data_LAGAN(subset='signal'):
 def lagan_disretized_loader(subset='concatenate'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir + '/discretized_lagan.h5', 'r') as f:
-        image = np.asarray(f[subset][:10000])
+        image = np.asarray(f[subset][:])
     print('image shape', image.shape)
     return image
-
-
-
 
 
 def load_jet_image(num=10000, signal=0):
@@ -196,11 +193,10 @@ def get_psi(mu, std):
 
 
 # spiral permutation
-def spiral_perm(A, from_center=True):
+def spiral_perm(A):
     """
 
     :param A: a square matrix of index
-    :param from_center: the order of spiral
     :return: a list of numbers corresponding to spiral permutation
     """
     index_list = []
@@ -211,21 +207,23 @@ def spiral_perm(A, from_center=True):
 
         index_list = index_list + list(A[num_cols - row - 1, row:len(A) - row - 1][::-1])
         index_list = index_list + list(A[row + 1:len(A) - row - 1, row][::-1])
-    if from_center:
-        index_list = index_list  # [::-1]
     return index_list
 
-def vector_spiral_perm(data, dim):
+
+def vector_spiral_perm(data, dim, start='center'):
     """
     wrapper function for spiral_perm
     :param data:
     :param dim:
+    :param start: the order of spiral
     :return: permutated data matrix
     """
-    A = np.arange(data.shape[1]).reshape(dim,dim)
-    perm_spiral = spiral_perm(A)
-    return data[:, perm_spiral]
 
+    A = np.arange(data.shape[1]).reshape(dim, dim)
+    perm_spiral = spiral_perm(A)
+    if start == 'center':
+        perm_spiral = perm_spiral[::-1]
+    return data[:, perm_spiral], np.asarray(perm_spiral)
 
 
 # reparameterizable truncated normal approximation:

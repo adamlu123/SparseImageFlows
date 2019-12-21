@@ -122,7 +122,7 @@ if args.jet_images == True:
     # train_dataset = train_dataset.reshape(-1, 1024)
     # image_size = 32
 
-    train_dataset = utils.vector_spiral_perm(train_dataset, dim=image_size)
+    train_dataset, ind = utils.vector_spiral_perm(train_dataset, dim=image_size)
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
 
@@ -257,7 +257,7 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    modules += [multiscale.MultiscaleAR(25, num_inputs, [25, 625-25], act=args.activation, num_latent_layer=args.latent)]
+    modules += [multiscale.MultiscaleAR(49, num_inputs, [49, 625-49], act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
 
@@ -344,6 +344,12 @@ best_validation_epoch = 0
 best_model = model
 dist_list = []
 
+
+inverse_ind = []
+for i in range(625):
+    inverse_ind.append(np.where(ind==i))
+inverse_ind = np.asarray(inverse_ind).squeeze()
+
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
@@ -355,7 +361,8 @@ for epoch in range(args.epochs):
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset[:samples.shape[0], :].reshape(-1, image_size, image_size), samples[:,:], image_size=image_size)
+        dist = get_distance(train_dataset[:samples.shape[0], inverse_ind].reshape(-1, image_size, image_size),
+                            samples[:, inverse_ind], image_size=image_size)
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 
