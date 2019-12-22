@@ -130,15 +130,16 @@ class MultiscaleAR(nn.Module):
     def forward(self, inputs, mode='direct'):
         if mode == 'direct':
             gamma_i, pred_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
-            inner_mean = (gamma_i*pred_i).mean(dim=1)  # shape=(batch, 9)
+            inner_mean = gamma_i.squeeze() * \
+                         (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, gamma_i.shape[2]).cuda()).mean(dim=1)  # shape=(batch, 277, 49)
             gamma_o, pred_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
             gamma, pred = torch.cat([gamma_i, gamma_o], -1), torch.cat([pred_i, pred_o], -1)
             self.gamma = gamma.detach().cpu().numpy()
 
             nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 625)
             ll = torch.where(inputs > 0,
-                             0.1 * (gamma + 1e-10).log() - nll_positive,
-                             0.1 * (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                            (gamma + 1e-10).log() - nll_positive,
+                            (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
             return ll
 
         else:

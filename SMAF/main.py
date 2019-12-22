@@ -46,7 +46,7 @@ parser.add_argument(
     default=1000,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
-    '--lr', type=float, default=0.005, help='learning rate (default: 0.0001)')
+    '--lr', type=float, default=0.01, help='learning rate (default: 0.0001)')
 parser.add_argument(
     '--dataset',
     default='JetImages',
@@ -94,7 +94,7 @@ parser.add_argument(
         help="activation"
     )
 parser.add_argument(
-        "--latent", type=int, default=1,
+        "--latent", type=int, default=3,
         help="number of latent layer in the flow"
     )
 
@@ -257,7 +257,7 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    modules += [multiscale.MultiscaleAR(49, num_inputs, [49, 625-49], act=args.activation, num_latent_layer=args.latent)]
+    modules += [multiscale.MultiscaleAR(81, num_inputs, [81, 625-81], act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
 
@@ -275,8 +275,8 @@ if torch.cuda.device_count() > 1:
     print("Let's use", torch.cuda.device_count(), "GPUs!")
     model = nn.DataParallel(model)
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[50, 100, 150], gamma=0.5, last_epoch=-1)
+optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30], gamma=0.5, last_epoch=-1)
 
 # writer = SummaryWriter(comment=args.flow + "_" + args.dataset)
 global_step = 0
@@ -302,14 +302,14 @@ def train(epoch):
         optimizer.zero_grad()
         # loss = -model(data, mode='direct').mean()
         loss = -model.module.log_probs(data).mean()
-        # gamma = model.module._modules['0'].gamma
+        gamma = model.module._modules['0'].gamma
         # mu = model._modules['0'].mu
         # log_std = model._modules['0'].log_std
         # u = model.u
         # log_jacob = model.log_jacob
 
-        # if batch_idx % args.log_interval == 0:
-        #     print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
+        if batch_idx % args.log_interval == 0:
+            print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
             # print('mu min:{}, mu max:{}, mu mean:{}'.format(mu.min(), mu.max(), mu.mean()))
             # print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
             # print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
@@ -357,16 +357,16 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.module.sample(num_samples=200, input_size=image_size**2)
+        samples = model.module.sample(num_samples=200, input_size=image_size**2)[:, inverse_ind]
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
         dist = get_distance(train_dataset[:samples.shape[0], inverse_ind].reshape(-1, image_size, image_size),
-                            samples[:, inverse_ind], image_size=image_size)
+                            samples, image_size=image_size)
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 
-        if epoch % 50 == 0:
+        if epoch % 5 == 0:
             # distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
             # torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
