@@ -46,7 +46,7 @@ parser.add_argument(
     default=1000,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
-    '--lr', type=float, default=0.01, help='learning rate (default: 0.0001)')
+    '--lr', type=float, default=0.005, help='learning rate (default: 0.0001)')
 parser.add_argument(
     '--dataset',
     default='JetImages',
@@ -94,7 +94,7 @@ parser.add_argument(
         help="activation"
     )
 parser.add_argument(
-        "--latent", type=int, default=3,
+        "--latent", type=int, default=1,
         help="number of latent layer in the flow"
     )
 

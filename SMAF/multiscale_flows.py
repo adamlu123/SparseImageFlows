@@ -67,7 +67,7 @@ class ARBase(nn.Module):
 
         input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type='input')
         hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
-        output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
+        output_mask = get_mask(num_hidden, num_inputs * 1, num_inputs, mask_type='output')  # *2
 
         self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask, num_cond_inputs)
 
@@ -75,7 +75,7 @@ class ARBase(nn.Module):
         for i in range(num_latent_layer):
             latent_modules.append(act_func())
             latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden, hidden_mask))
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 2, output_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 1, output_mask))  # * 2
         self.trunk = nn.Sequential(*latent_modules)
 
         self.conv1d = nn.Sequential(
@@ -85,30 +85,40 @@ class ARBase(nn.Module):
         )
         self.conv1d_gamma = nn.Conv1d(in_channels=1, out_channels=1, stride=1, kernel_size=1)
 
-    def forward(self, inputs, cond_inputs=None, mode='direct', epoch=0):
+    def forward(self, inputs, cond_inputs=None, mode='direct', epoch=0, mask=False):
         input_dim = inputs.shape[1]
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
-            gamma, theta = self.trunk(h).chunk(2, 1)
-            gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim))
-            gamma = torch.sigmoid(gamma)
-            pred = self.conv1d(theta.view(-1,1,input_dim))  # shape=(batch, 276, 625)
-            return gamma, pred
+            if not mask:
+                theta = self.trunk(h)
+                return self.conv1d(theta.view(-1, 1, input_dim))  # shape=(batch, 276, 625)
+            else:
+                gamma, theta = self.trunk(h).chunk(2, 1)
+                gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim))
+                gamma = torch.sigmoid(gamma)
+                pred = self.conv1d(theta.view(-1,1,input_dim))  # shape=(batch, 276, 625)
+                return gamma, pred
 
         else:
             x = torch.zeros_like(inputs)
             with torch.no_grad():
                 for i in range(input_dim):
                     h = self.joiner(x.view(-1, input_dim), cond_inputs)
-                    gamma, theta = self.trunk(h).chunk(2, 1)  #
-                    gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
-                    gamma = torch.sigmoid(gamma[:, i])
-                    z = Bernoulli(probs=gamma).sample()
+                    if not mask:
+                        theta = self.trunk(h)
+                    else:
+                        gamma, theta = self.trunk(h).chunk(2, 1)  #
+                        gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
+                        gamma = torch.sigmoid(gamma[:, i])
+                        z = Bernoulli(probs=gamma).sample()
 
                     out = self.conv1d(theta.view(-1,1,input_dim))
                     probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
                     nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
-                    x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+                    if not mask:
+                        x[:, i] = nonzeros
+                    else:
+                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
             return x
 
 
@@ -121,25 +131,37 @@ class MultiscaleAR(nn.Module):
                  num_inputs,
                  num_hidden,
                  act='relu',
-                 num_latent_layer=2):
+                 num_latent_layer=2,
+                 learnable_mask=False):
         super(MultiscaleAR, self).__init__()
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer)
         self.ARouter = ARBase(num_inputs-window_area, num_hidden[1], window_area, act, num_latent_layer)
         self.window_area = window_area
+        self.learnable_mask = learnable_mask
 
     def forward(self, inputs, mode='direct'):
         if mode == 'direct':
-            gamma_i, pred_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
-            inner_mean = gamma_i.squeeze() * \
-                         (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, gamma_i.shape[2]).cuda()).mean(dim=1)  # shape=(batch, 277, 49)
-            gamma_o, pred_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
-            gamma, pred = torch.cat([gamma_i, gamma_o], -1), torch.cat([pred_i, pred_o], -1)
-            self.gamma = gamma.detach().cpu().numpy()
+            if self.learnable_mask:
+                gamma_i, pred_i = self.ARinner(inputs[:, :self.window_area], mode='direct', mask=True)
+                inner_mean = gamma_i.squeeze() * \
+                             (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, gamma_i.shape[2]).cuda()).mean(dim=1)  # shape=(batch, 277, 49)
+                gamma_o, pred_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct', mask=True)
+                gamma, pred = torch.cat([gamma_i, gamma_o], -1), torch.cat([pred_i, pred_o], -1)
+                self.gamma = gamma.detach().cpu().numpy()
+            else:
+                pred_i = self.ARinner(inputs[:, :self.window_area], mode='direct', mask=False)
+                inner_mean = (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, pred_i.shape[2]).cuda()).mean(dim=1) # shape=(batch, 277, 49)
+                pred_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct', mask=False)
+                pred = torch.cat([pred_i, pred_o], -1)
+                self.gamma = torch.tensor([0.])
+
 
             nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 625)
-            ll = torch.where(inputs > 0,
-                            (gamma + 1e-10).log() - nll_positive,
-                            (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+            ll = -nll_positive
+            if self.learnable_mask:
+                ll = torch.where(inputs > 0,
+                                (gamma + 1e-10).log() - nll_positive,
+                                (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
             return ll
 
         else:
