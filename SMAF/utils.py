@@ -82,7 +82,7 @@ def load_data_LAGAN(subset='signal'):
 def lagan_disretized_loader(subset='concatenate'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir + '/discretized_lagan.h5', 'r') as f:
-        image = np.asarray(f[subset][:])
+        image = np.asarray(f[subset][:10000])
     print('image shape', image.shape)
     return image
 

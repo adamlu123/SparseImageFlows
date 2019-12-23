@@ -234,10 +234,12 @@ class ARBase(nn.Module):
                 gamma = torch.sigmoid(gamma)
                 return gamma, mu, log_std
             elif self.type == 'logistic':
-                mu, log_std = self.trunk(h).chunk(3, 1)
+                pi, mu, log_s = self.trunk(h).chunk(3, 1)
+                pi = self.conv1d_pi(pi.view(-1, 1, input_dim))
+                pi = F.softmax(pi, dim=1)
                 mu = self.conv1d_mu(mu.view(-1, 1, input_dim))
-                log_std = self.conv1d_sd(mu.view(-1, 1, input_dim))
-                return mu, log_std
+                log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim))
+                return pi, mu, log_s
 
         # sampling
         else:
@@ -273,11 +275,11 @@ class ARBase(nn.Module):
                             x[:, i] = inputs[:, i]
 
                     elif self.type == 'logistic':
-                        pi, mu, log_std = self.trunk(h).chunk(3, 1)
-                        pi = self.conv1d_pi(pi.view(-1, 1, input_dim))  # shape=(batch, 10, 49)
+                        pi, mu, log_s = self.trunk(h).chunk(3, 1)
+                        pi = self.conv1d_pi(pi.view(-1, 1, input_dim))   # shape=(batch, 10, 1)
                         mu = self.conv1d_mu(mu.view(-1, 1, input_dim))
-                        log_std = self.conv1d_sd(log_std.view(-1, 1, input_dim))
-                        x[:, i] = sample_onehot(pi) * sample_logistic(mu, log_std)
+                        log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim))[:, :, i]
+                        x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
             return x
 
 
@@ -291,7 +293,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type = 'masked truncated normal'):
+                 type ='logistic'):
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type)
@@ -340,10 +342,19 @@ class MultiscaleAR(nn.Module):
                                  (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'logistic':
-                pi_i, mu_i, s_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
+                pi_i, mu_i, log_s_i = self.ARinner(inputs[:, :self.window_area], mode='direct')  # shape=(batch, 10, 49)
+                inner_mean = (pi_i * mu_i).mean(dim=1)
+                pi_o, mu_o, log_s_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
 
-                ll = None  # TODO 2: logistic likelihood
+                pi = torch.cat([pi_i, pi_o], -1)
+                mu = torch.cat([mu_i, mu_o], -1)
+                s = torch.cat([log_s_i, log_s_o], -1).exp()
 
+                inputs = inputs.unsqueeze(1).repeat(1, pi.shape[1], 1)  # shape=(batch, 10, 625)
+                nonzeros = pi*(torch.sigmoid((inputs+0.5-mu)/s) - torch.sigmoid((inputs-0.5-mu)/s))
+                zeros = pi*torch.sigmoid((inputs+0.5-mu)/s)
+                ll = torch.where(inputs > 0, nonzeros, zeros)
+                self.gamma = torch.tensor([0.])
 
             return ll
 

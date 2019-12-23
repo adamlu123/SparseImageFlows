@@ -90,7 +90,7 @@ parser.add_argument(
     help="activation"
     )
 parser.add_argument(
-    "--latent", type=int, default=3,
+    "--latent", type=int, default=2,
     help="number of latent layer in the flow"
     )
 parser.add_argument(
@@ -117,10 +117,10 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    # train_dataset = lagan_disretized_loader(subset='signal')
-    # train_dataset = train_dataset.reshape(-1, 625)
-    train_dataset = load_data_LAGAN(subset='signal')
+    train_dataset = lagan_disretized_loader(subset='signal')
     train_dataset = train_dataset.reshape(-1, 625)
+    # train_dataset = load_data_LAGAN(subset='signal')
+    # train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 
     # train_dataset = load_jet_image(num=50000, signal=1)
@@ -363,7 +363,7 @@ for epoch in range(args.epochs):
         samples = model.module.sample(torch.tensor(train_dataset[:1000, :]).cuda(), num_samples=1000, input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':
-            print(ind[inverse_ind])
+            # print(ind[inverse_ind])
             samples = samples[:, inverse_ind]
             eval_data = eval_data[:, inverse_ind]
 
