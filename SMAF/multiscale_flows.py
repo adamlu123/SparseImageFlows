@@ -264,10 +264,10 @@ class ARBase(nn.Module):
 
                     elif self.type == 'masked truncated normal':
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-                        gamma = torch.sigmoid(gamma[:, i])
+                        gamma = 1 - torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
                         nonzeros = inputs[:, i] * torch.exp(log_std[:, i]) + mu[:, i]
-                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
 
                     elif self.type == 'logistic':
                         pi, mu, log_std = self.trunk(h).chunk(3, 1)
@@ -330,11 +330,11 @@ class MultiscaleAR(nn.Module):
                 mu = torch.cat([mu_i, mu_o], -1)
                 log_std = torch.cat([log_std_i, log_std_o], -1)
 
-                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma
+                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma  # here gamma = p(z=0)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
-                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
-                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                                 (1 - gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=log_std, value=inputs),
+                                 (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'logistic':
                 ll = None  # TODO 2: logistic likelihood

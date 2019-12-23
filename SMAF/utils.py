@@ -82,7 +82,7 @@ def load_data_LAGAN(subset='signal'):
 def lagan_disretized_loader(subset='concatenate'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir + '/discretized_lagan.h5', 'r') as f:
-        image = np.asarray(f[subset][:10000])
+        image = np.asarray(f[subset][:])
     print('image shape', image.shape)
     return image
 
@@ -115,10 +115,10 @@ def gamma_log_prob(concentration, rate, value):
             rate * value - torch.lgamma(concentration))
     return logprob
 
-def normal_log_prob(mu, sd, value):
-    return np.log(1/np.sqrt(2*np.pi)) - sd.log() - (mu-value)**2/(2*sd**2)
 
-
+def normal_log_prob(mu, log_std, value):
+    return np.log(1/np.sqrt(2*np.pi)) - log_std - (mu-value)**2/((2*log_std.exp()).clamp(min=1e-5, max=1e5)**2)
+    #.clamp(min=-10, max=10)
 
 
 def get_condition(Z, U, c, V, d):
@@ -188,7 +188,7 @@ class MarsagliaTsampler(nn.Module):
 
 
 def get_psi(mu, std):
-    value = (-mu)/(std*np.sqrt(2))
+    value = (-mu)/(std*np.sqrt(2)).clamp(min=-1e10, max=1e10)
     return 0.5 * (1 + 2*torch.sigmoid(2.5*value)-1)
 
 

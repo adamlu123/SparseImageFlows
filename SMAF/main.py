@@ -46,13 +46,9 @@ parser.add_argument(
     default=1000,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
-    '--lr', type=float, default=0.001, help='learning rate (default: 0.0001)')
-parser.add_argument(
     '--dataset',
     default='JetImages',
     help='POWER | GAS | HEPMASS | MINIBONE | BSDS300 | MOONS | JetImages')
-parser.add_argument(
-    '--flow', default='multiscale AR', help='flow to use: maf | realnvp | glow')
 parser.add_argument(
     '--no-cuda',
     action='store_true',
@@ -81,22 +77,31 @@ parser.add_argument(
     default=True,
     help='whether to use the Jet images in LAGAN paper')
 parser.add_argument(
-        "--subset",
-        type=str, default='signal',
-        help="training on which subset"
+    "--subset",
+    type=str, default='signal',
+    help="training on which subset"
     )
 parser.add_argument(
-        "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/lagan_pixelcnn/Mixture',
-        help="result directory"
+    "--result_dir", type=str, default='/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/lagan_pixelcnn/Mixture',
+    help="result directory"
     )
 parser.add_argument(
-        "--activation", type=str, default='relu',
-        help="activation"
+    "--activation", type=str, default='relu',
+    help="activation"
     )
 parser.add_argument(
-        "--latent", type=int, default=3,
-        help="number of latent layer in the flow"
+    "--latent", type=int, default=3,
+    help="number of latent layer in the flow"
     )
+parser.add_argument(
+    "--input_permute", type=str, default='spiral from center',
+    help='type of permute: none, spiral from center',
+    )
+parser.add_argument(
+    '--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
+parser.add_argument(
+    '--flow', default='multiscale AR',
+    help='flow to use: mixture-maf, multiscale AR, maf | realnvp | glow')
 
 
 args = parser.parse_args()
@@ -121,8 +126,8 @@ if args.jet_images == True:
     # train_dataset = load_jet_image(num=50000, signal=1)
     # train_dataset = train_dataset.reshape(-1, 1024)
     # image_size = 32
-
-    train_dataset, ind = utils.vector_spiral_perm(train_dataset, dim=image_size)
+    if args.input_permute == 'spiral from center':
+        train_dataset, ind = utils.vector_spiral_perm(train_dataset, dim=image_size)
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
 
@@ -158,8 +163,6 @@ if args.jet_images == True:
 #         test_tensor = torch.from_numpy(dataset.tst.x)
 #         test_dataset = torch.utils.data.TensorDataset(test_tensor)
 #         num_cond_inputs = None
-#
-#
 
 train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
@@ -245,7 +248,7 @@ elif args.flow == 'maf-split-glow':
             fnn.InvertibleMM(num_inputs)
         ]
 elif args.flow == 'mixture-maf':
-    modules += [fnn.MixtureDiscreteMADE(num_inputs, num_hidden, num_cond_inputs,
+    modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
                                       act=args.activation, num_latent_layer=args.latent)]
     model = fnn.FlowSequential(*modules)
     # for _ in range(args.num_blocks):
@@ -257,7 +260,7 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    modules += [multiscale.MultiscaleAR(49, num_inputs, [49, 625-49], act=args.activation, num_latent_layer=args.latent)]
+    modules += [multiscale.MultiscaleAR(81, num_inputs, [81, 625-81], act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
 
@@ -344,34 +347,38 @@ best_validation_epoch = 0
 best_model = model
 dist_list = []
 
-
-inverse_ind = []
-for i in range(625):
-    inverse_ind.append(np.where(ind==i))
-inverse_ind = np.asarray(inverse_ind).squeeze()
-
-np.savetxt('inverse_ind.txt', inverse_ind)
+if args.input_permute == 'spiral from center':
+    inverse_ind = []
+    for i in range(625):
+        inverse_ind.append(np.where(ind==i))
+    inverse_ind = np.asarray(inverse_ind).squeeze()
 
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 10 == 0:
+    if epoch % 5 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.module.sample(num_samples=200, input_size=image_size**2)[:, inverse_ind]
+        samples = model.module.sample(num_samples=1000, input_size=image_size**2)
+        eval_data = train_dataset[:samples.shape[0], :]
+        if args.input_permute == 'spiral from center':
+            print(ind[inverse_ind])
+            samples = samples[:, inverse_ind]
+            eval_data = eval_data[:, inverse_ind]
+
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
 
-        dist = get_distance(train_dataset[:samples.shape[0], inverse_ind].reshape(-1, image_size, image_size),
-                            samples, image_size=image_size)
+        dist = get_distance(eval_data.reshape(-1, image_size, image_size),
+                            samples.reshape(-1, image_size, image_size), image_size=image_size)
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 
         if epoch % 5 == 0:
             # distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            # torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
+            torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
             with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')

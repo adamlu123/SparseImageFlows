@@ -388,7 +388,7 @@ class FlowSequential(nn.Sequential):
             log_probs = self(inputs)
             return (log_probs).sum(-1, keepdim=True)
         else:
-            ll = self(inputs)
+            _, _, ll = self(inputs)
             self.log_jacob = torch.tensor(0.)
             self.u = torch.tensor(0.)
             # log_probs = (-0.5 * u ** 2 - 0.5 * math.log(2 * math.pi))  #.sum(-1, keepdim=True)
