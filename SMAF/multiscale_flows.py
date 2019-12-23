@@ -242,6 +242,7 @@ class ARBase(nn.Module):
         # sampling
         else:
             x = torch.zeros_like(inputs)
+            noise = torch.Tensor(inputs.size()).normal_().cuda()
             with torch.no_grad():
                 for i in range(input_dim):
                     h = self.joiner(x.view(-1, input_dim), cond_inputs)
@@ -266,8 +267,10 @@ class ARBase(nn.Module):
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                         gamma = 1 - torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
-                        nonzeros = inputs[:, i] * torch.exp(log_std[:, i]) + mu[:, i]
+                        nonzeros = noise[:, i] * torch.exp(log_std[:, i]).clamp(min=1e-5, max=1e5) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
+                        if i == 0:
+                            x[:, i] = inputs[:, i]
 
                     elif self.type == 'logistic':
                         pi, mu, log_std = self.trunk(h).chunk(3, 1)
@@ -337,7 +340,10 @@ class MultiscaleAR(nn.Module):
                                  (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'logistic':
+                pi_i, mu_i, s_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
+
                 ll = None  # TODO 2: logistic likelihood
+
 
             return ll
 
@@ -378,14 +384,14 @@ class FlowSequential(nn.Sequential):
         self.u = torch.tensor(0.)
         return ll
 
-    def sample(self, num_samples=None, noise=None, cond_inputs=None, input_size=1024):
+    def sample(self, inputs, num_samples=None, noise=None, cond_inputs=None, input_size=1024):
         if noise is None:
             noise = torch.Tensor(num_samples, input_size).normal_()
         device = next(self.parameters()).device
         noise = noise.to(device)
         if cond_inputs is not None:
             cond_inputs = cond_inputs.to(device)
-        samples = self.forward(noise, cond_inputs, mode='inverse')
+        samples = self.forward(inputs, cond_inputs, mode='inverse')
         return samples
 
 
