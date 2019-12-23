@@ -46,7 +46,7 @@ parser.add_argument(
     default=1000,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
-    '--lr', type=float, default=0.005, help='learning rate (default: 0.0001)')
+    '--lr', type=float, default=0.001, help='learning rate (default: 0.0001)')
 parser.add_argument(
     '--dataset',
     default='JetImages',
@@ -94,7 +94,7 @@ parser.add_argument(
         help="activation"
     )
 parser.add_argument(
-        "--latent", type=int, default=1,
+        "--latent", type=int, default=3,
         help="number of latent layer in the flow"
     )
 
@@ -257,7 +257,7 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    modules += [multiscale.MultiscaleAR(81, num_inputs, [81, 625-81], act=args.activation, num_latent_layer=args.latent)]
+    modules += [multiscale.MultiscaleAR(49, num_inputs, [49, 625-49], act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
 
@@ -349,6 +349,8 @@ inverse_ind = []
 for i in range(625):
     inverse_ind.append(np.where(ind==i))
 inverse_ind = np.asarray(inverse_ind).squeeze()
+
+np.savetxt('inverse_ind.txt', inverse_ind)
 
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
