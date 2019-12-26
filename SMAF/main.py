@@ -375,10 +375,10 @@ for epoch in range(args.epochs):
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 
-        if epoch % 5 == 0:
+        if epoch % 50 == 0:
             # distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            torch.save(model.state_dict(), args.result_dir + '/laganjet_model_{}.pt'.format(epoch))
+            torch.save(model.state_dict(), args.result_dir + '/lagan_logistic_model_{}.pt'.format(epoch))
             with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')

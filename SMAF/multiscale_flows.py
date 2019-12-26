@@ -1,3 +1,5 @@
+# By Yadong Lu, Dec 2019
+
 import math
 import types
 
@@ -150,7 +152,7 @@ def sample_logistic(mu, log_std):
     :param log_std:
     :return: (batch, 10, 49)
     """
-    u = Uniform(0, 1).sample(mu.size())
+    u = Uniform(0, 1).sample(mu.size()).cuda()
     return mu + log_std.exp() * torch.log(u/(1-u))
 
 
@@ -160,9 +162,9 @@ def sample_onehot(pi):
     :param pi: (batch, 10, 49)
     :return: (batch, 10, 49)
     """
-    probs = F.softmax(pi, dim=1).data.permute(0, 2, 1)  # shape=(batch, 49, 10)
-    nonzeros = torch.distributions.OneHotCategorical(probs).float()  # shape=(batchsize, 49, 10)
-    return nonzeros.permute(0, 2, 1)  # shape=(batch, 10, 49)
+    probs = F.softmax(pi, dim=1)  # shape=(batch, 10)
+    nonzeros = torch.distributions.OneHotCategorical(probs).sample().float()  # shape=(batchsize, 10)
+    return nonzeros  # shape=(batch, 10)
 
 
 
@@ -243,7 +245,7 @@ class ARBase(nn.Module):
 
         # sampling
         else:
-            x = torch.zeros_like(inputs)
+            x = torch.zeros_like(inputs).float()
             noise = torch.Tensor(inputs.size()).normal_().cuda()
             with torch.no_grad():
                 for i in range(input_dim):
@@ -271,15 +273,17 @@ class ARBase(nn.Module):
                         z = Bernoulli(probs=gamma).sample()
                         nonzeros = noise[:, i] * torch.exp(log_std[:, i]).clamp(min=1e-5, max=1e5) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
-                        if i == 0:
-                            x[:, i] = inputs[:, i]
+                        # if i == 0:
+                        #     x[:, i] = inputs[:, i]
 
                     elif self.type == 'logistic':
                         pi, mu, log_s = self.trunk(h).chunk(3, 1)
                         pi = self.conv1d_pi(pi.view(-1, 1, input_dim))   # shape=(batch, 10, 1)
                         mu = self.conv1d_mu(mu.view(-1, 1, input_dim))
-                        log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim))[:, :, i]
+                        log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim))
+                        pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
                         x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
+            # x = torch.floor(x+0.5)
             return x
 
 
@@ -293,7 +297,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='logistic'):
+                 type ='masked truncated normal'):
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type)
@@ -354,8 +358,8 @@ class MultiscaleAR(nn.Module):
                 nonzeros = pi*(torch.sigmoid((inputs+0.5-mu)/s) - torch.sigmoid((inputs-0.5-mu)/s))
                 zeros = pi*torch.sigmoid((inputs+0.5-mu)/s)
                 ll = torch.where(inputs > 0, nonzeros, zeros)
+                ll = ll.sum(dim=1)
                 self.gamma = torch.tensor([0.])
-
             return ll
 
         # sampling
