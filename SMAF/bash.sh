@@ -2,7 +2,6 @@
 act=${act}
 latent=${latent}
 result_fldr=${result_fldr}
-
 source activate pytorch
 
 

@@ -62,7 +62,7 @@ parser.add_argument(
 parser.add_argument(
     '--num-blocks',
     type=int,
-    default=2,
+    default=3,
     help='number of invertible blocks (default: 5)')
 parser.add_argument(
     '--seed', type=int, default=1, help='random seed (default: 1)')
@@ -90,7 +90,7 @@ parser.add_argument(
     help="activation"
     )
 parser.add_argument(
-    "--latent", type=int, default=2,
+    "--latent", type=int, default=10,
     help="number of latent layer in the flow"
     )
 parser.add_argument(
@@ -98,7 +98,7 @@ parser.add_argument(
     help='type of permute: none, spiral from center',
     )
 parser.add_argument(
-    '--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
+    '--lr', type=float, default=0.01, help='learning rate (default: 0.0001)')
 parser.add_argument(
     '--flow', default='multiscale AR',
     help='flow to use: mixture-maf, multiscale AR, maf | realnvp | glow')
@@ -126,6 +126,7 @@ if args.jet_images == True:
     # train_dataset = load_jet_image(num=50000, signal=1)
     # train_dataset = train_dataset.reshape(-1, 1024)
     # image_size = 32
+
     if args.input_permute == 'spiral from center':
         train_dataset, ind = utils.vector_spiral_perm(train_dataset, dim=image_size)
     print('data_shape', train_dataset.shape)
@@ -260,7 +261,9 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    modules += [multiscale.MultiscaleAR(225, num_inputs, [225, 625-225], act=args.activation, num_latent_layer=args.latent)]
+    window_area = 49
+    num_hidden = [window_area*10, (625-window_area)*1]
+    modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
 
@@ -279,7 +282,8 @@ if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30], gamma=0.5, last_epoch=-1)
+# optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30], gamma=0.1, last_epoch=-1)
 
 # writer = SummaryWriter(comment=args.flow + "_" + args.dataset)
 global_step = 0
@@ -304,8 +308,8 @@ def train(epoch):
         data = data.cuda().float()
         optimizer.zero_grad()
         # loss = -model(data, mode='direct').mean()
-        loss = -model.module.log_probs(data).mean()
-        gamma = model.module._modules['0'].gamma
+        loss = -model.log_probs(data).mean()
+        gamma = model._modules['0'].gamma
         # mu = model._modules['0'].mu
         # log_std = model._modules['0'].log_std
         # u = model.u
@@ -356,11 +360,11 @@ if args.input_permute == 'spiral from center':
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 1 == 0:
+    if epoch % 10 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.module.sample(torch.tensor(train_dataset[:1000, :]).cuda(), num_samples=1000, input_size=image_size**2)
+        samples = model.sample(torch.tensor(train_dataset[:1000, :]).cuda(), input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':
             # print(ind[inverse_ind])
@@ -375,7 +379,7 @@ for epoch in range(args.epochs):
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 
-        if epoch % 50 == 0:
+        if epoch % 10 == 0:
             # distance = np.asarray(dist_list)
             # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
             torch.save(model.state_dict(), args.result_dir + '/lagan_logistic_model_{}.pt'.format(epoch))

@@ -176,9 +176,9 @@ class ARBase(nn.Module):
                  num_inputs,
                  num_hidden,
                  num_cond_inputs=None,
-                 act='relu',
+                 act=None,
                  num_latent_layer=2,
-                 type = 'masked softmax'):
+                 type=None):
         super(ARBase, self).__init__()
         activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
         act_func = activations[act]
@@ -201,6 +201,21 @@ class ARBase(nn.Module):
             if 'mask' in type:
                 self.conv1d_gamma = nn.Conv1d(in_channels=1, out_channels=1, stride=1, kernel_size=1)
 
+        # elif type == 'masked truncated normal':
+        #     self.conv1d_mu = nn.Sequential(
+        #         nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1), nn.BatchNorm1d(5), nn.Tanh(),
+        #         nn.Conv1d(in_channels=5, out_channels=1, stride=1, kernel_size=1)
+        #     )
+        #     self.conv1d_log_std = nn.Sequential(
+        #         nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1), nn.BatchNorm1d(5), nn.Tanh(),
+        #         nn.Conv1d(in_channels=5, out_channels=1, stride=1, kernel_size=1)
+        #     )
+        #     self.conv1d_gamma = nn.Sequential(
+        #         nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1), nn.BatchNorm1d(5), nn.Tanh(),
+        #         nn.Conv1d(in_channels=5, out_channels=1, stride=1, kernel_size=1)
+        #     )
+
+
         elif 'logistic' in type:
             self.conv1d_pi = nn.Sequential(
                 nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1), nn.BatchNorm1d(5), nn.ReLU(),
@@ -217,6 +232,7 @@ class ARBase(nn.Module):
 
 
 
+
     def forward(self, inputs, cond_inputs=None, mode='direct', epoch=0):
         input_dim = inputs.shape[1]
         # inference
@@ -227,12 +243,16 @@ class ARBase(nn.Module):
                 return self.conv1d(theta.view(-1, 1, input_dim))  # shape=(batch, 277, 625)
             elif self.type == 'masked softmax':
                 gamma, theta = self.trunk(h).chunk(2, 1)
-                gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim))
+                # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim))
+                gamma = gamma.unsqueeze(1)
                 gamma = torch.sigmoid(gamma)
                 pred = self.conv1d(theta.view(-1,1,input_dim))  # shape=(batch, 277, 625)
                 return gamma, pred
             elif self.type == 'masked truncated normal':
                 gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                # mu = self.conv1d_mu(mu.view(-1, 1, input_dim)).squeeze()
+                # log_std = self.conv1d_log_std(mu.view(-1, 1, input_dim)).squeeze()
+                # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
                 gamma = torch.sigmoid(gamma)
                 return gamma, mu, log_std
             elif self.type == 'logistic':
@@ -259,22 +279,28 @@ class ARBase(nn.Module):
 
                     elif self.type == 'masked softmax':
                         gamma, theta = self.trunk(h).chunk(2, 1)  #
-                        gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
+                        # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
                         gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
                         out = self.conv1d(theta.view(-1,1,input_dim))
                         probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
                         nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+                        if i == 0 and inputs.shape[1] == 49:
+                            x[:, i] = inputs[:, i]
 
                     elif self.type == 'masked truncated normal':
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                        # mu = self.conv1d_mu(mu.view(-1, 1, input_dim)).squeeze()
+                        # log_std = self.conv1d_log_std(mu.view(-1, 1, input_dim)).squeeze()
+                        # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
+
                         gamma = 1 - torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
                         nonzeros = noise[:, i] * torch.exp(log_std[:, i]).clamp(min=1e-5, max=1e5) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
-                        # if i == 0:
-                        #     x[:, i] = inputs[:, i]
+                        if i == 0 and inputs.shape[1] == 225:
+                            x[:, i] = inputs[:, i]
 
                     elif self.type == 'logistic':
                         pi, mu, log_s = self.trunk(h).chunk(3, 1)
@@ -283,6 +309,9 @@ class ARBase(nn.Module):
                         log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim))
                         pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
                         x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
+                        if i == 0 and inputs.shape[1] == 225:
+                            x[:, i] = inputs[:, i]
+
             # x = torch.floor(x+0.5)
             return x
 
@@ -297,7 +326,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='masked truncated normal'):
+                 type ='softmax'):  # logistic, masked softmax, masked truncated normal, softmax
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type)
@@ -400,6 +429,7 @@ class FlowSequential(nn.Sequential):
         return ll
 
     def sample(self, inputs, num_samples=None, noise=None, cond_inputs=None, input_size=1024):
+        num_samples = inputs.shape[0]
         if noise is None:
             noise = torch.Tensor(num_samples, input_size).normal_()
         device = next(self.parameters()).device
@@ -412,7 +442,6 @@ class FlowSequential(nn.Sequential):
 
 
 
-#TODO merge 1. masked softmax 2. softmax 3. logistic 4. masked trucated normal (have 1. and 2. already in place)
 
 
 
