@@ -117,7 +117,7 @@ def create_mask(num_inputs, num_hidden, type):
     hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
     if type == 'masked softmax':
         output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
-    elif type == 'masked truncated normal':
+    elif type == 'masked truncated normal' or type == 'masked reshaped normal':
         output_mask = get_mask(num_hidden, num_inputs * 3, num_inputs, mask_type='output')
     elif type == 'softmax':
         output_mask = get_mask(num_hidden, num_inputs * 1, num_inputs, mask_type='output')
@@ -248,11 +248,8 @@ class ARBase(nn.Module):
                 gamma = torch.sigmoid(gamma)
                 pred = self.conv1d(theta.view(-1,1,input_dim))  # shape=(batch, 277, 625)
                 return gamma, pred
-            elif self.type == 'masked truncated normal':
+            elif self.type == 'masked truncated normal' or self.type == 'masked reshaped normal':
                 gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-                # mu = self.conv1d_mu(mu.view(-1, 1, input_dim)).squeeze()
-                # log_std = self.conv1d_log_std(mu.view(-1, 1, input_dim)).squeeze()
-                # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
                 gamma = torch.sigmoid(gamma)
                 return gamma, mu, log_std
             elif self.type == 'logistic':
@@ -291,14 +288,21 @@ class ARBase(nn.Module):
 
                     elif self.type == 'masked truncated normal':
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-                        # mu = self.conv1d_mu(mu.view(-1, 1, input_dim)).squeeze()
-                        # log_std = self.conv1d_log_std(mu.view(-1, 1, input_dim)).squeeze()
-                        # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
-
                         gamma = 1 - torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
-                        nonzeros = noise[:, i] * torch.exp(log_std[:, i]).clamp(min=1e-5, max=1e5) + mu[:, i]
+                        nonzeros = noise[:, i] * torch.exp(log_std[:, i]).clamp(min=1e-3, max=1e3) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
+                        if i == 0 and inputs.shape[1] == 225:
+                            x[:, i] = inputs[:, i]
+
+                    elif self.type == 'masked reshaped normal':
+                        gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                        gamma = torch.sigmoid(gamma[:, i])
+                        z = Bernoulli(probs=gamma).sample()
+                        nonzeros = utils.truncated_normal_sample(mu=mu[:, i],
+                                                                 sigma=log_std[:, i],
+                                                                 num_samples=inputs.shape[0])
+                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
                         if i == 0 and inputs.shape[1] == 225:
                             x[:, i] = inputs[:, i]
 
@@ -326,7 +330,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='softmax'):  # logistic, masked softmax, masked truncated normal, softmax
+                 type ='masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type)
@@ -339,20 +343,22 @@ class MultiscaleAR(nn.Module):
         if mode == 'direct':
             if self.type == 'masked softmax':
                 gamma_i, pred_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
-                inner_mean = gamma_i.squeeze() * \
-                             (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, gamma_i.shape[2]).cuda()).mean(dim=1)  # shape=(batch, 277, 49)
+                # inner_mean = gamma_i.squeeze() * \
+                #              (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, gamma_i.shape[2]).cuda()).mean(dim=1)  # shape=(batch, 277, 49)
+                inner_mean = inputs[:, :self.window_area]
                 gamma_o, pred_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
                 gamma, pred = torch.cat([gamma_i, gamma_o], -1), torch.cat([pred_i, pred_o], -1)
                 self.gamma = gamma.detach().cpu().numpy()
                 nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(),
                                                reduction="none")  # shape=(batchsize, 625)
                 ll = torch.where(inputs > 0,
-                                 (gamma + 1e-10).log() - nll_positive,
-                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                                 1e-2*(gamma + 1e-10).log() - nll_positive,
+                                 1e-2*(1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'softmax':
                 pred_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
-                inner_mean = (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, pred_i.shape[2]).cuda()).mean(dim=1) # shape=(batch, 277, 49)
+                inner_mean = inputs[:, :self.window_area]
+                # inner_mean = (pred_i*torch.linspace(0, 276, 277).unsqueeze(1).repeat(1, pred_i.shape[2]).cuda()).mean(dim=1) # shape=(batch, 277, 49)
                 pred_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
                 pred = torch.cat([pred_i, pred_o], -1)
                 self.gamma = torch.tensor([0.])
@@ -361,22 +367,38 @@ class MultiscaleAR(nn.Module):
 
             elif self.type == 'masked truncated normal':
                 gamma_i, mu_i, log_std_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
-                inner_mean = gamma_i * mu_i  # TODO 1: think about how to add std_i into cond input
+                # inner_mean = gamma_i * mu_i  # TODO 1: think about how to add std_i into cond input
+                inner_mean = inputs[:, :self.window_area]
                 gamma_o, mu_o, log_std_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
 
                 gamma = torch.cat([gamma_i, gamma_o], -1)
                 mu = torch.cat([mu_i, mu_o], -1)
                 log_std = torch.cat([log_std_i, log_std_o], -1)
 
+                log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                 gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma  # here gamma = p(z=0)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
                                  (1 - gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=log_std, value=inputs),
                                  (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
+            elif self.type == 'masked reshaped normal':
+                gamma_i, mu_i, log_std_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
+                inner_mean = inputs[:, :self.window_area]
+                gamma_o, mu_o, log_std_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
+                gamma = torch.cat([gamma_i, gamma_o], -1)
+                mu = torch.cat([mu_i, mu_o], -1)
+                log_std = torch.cat([log_std_i, log_std_o], -1).clamp(min=np.log(1e-3), max=np.log(1e3))
+                self.gamma = gamma
+                ll = torch.where(inputs > 0,
+                                 (1 - gamma + 1e-10).log() + utils.trucated_normal_log_prob_stable(mu=mu, log_std=log_std,
+                                                                                   value=inputs),
+                                 (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+
             elif self.type == 'logistic':
                 pi_i, mu_i, log_s_i = self.ARinner(inputs[:, :self.window_area], mode='direct')  # shape=(batch, 10, 49)
-                inner_mean = (pi_i * mu_i).mean(dim=1)
+                inner_mean = inputs[:, :self.window_area]
+                # inner_mean = (pi_i * mu_i).mean(dim=1)
                 pi_o, mu_o, log_s_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
 
                 pi = torch.cat([pi_i, pi_o], -1)

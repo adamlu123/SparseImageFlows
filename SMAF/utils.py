@@ -63,8 +63,8 @@ def save_images(epoch, best_model, cond):
 def load_data_LAGAN(subset='signal'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
-        image = np.asarray(f['image'][:100000])
-        real_labels = np.asarray(f['signal'][:100000])  # 10000
+        image = np.asarray(f['image'][:])
+        real_labels = np.asarray(f['signal'][:])  # 10000
     real_imagebg = image[real_labels == 0]
     real_imagesg = image[real_labels == 1]
     print(real_imagebg.shape, real_imagesg.shape)
@@ -117,7 +117,7 @@ def gamma_log_prob(concentration, rate, value):
 
 
 def normal_log_prob(mu, log_std, value):
-    return np.log(1/np.sqrt(2*np.pi)) - log_std - (mu-value)**2/((2*log_std.exp()).clamp(min=1e-10, max=1e10)**2)
+    return np.log(1/np.sqrt(2*np.pi)) - log_std - (mu-value)**2/((2*log_std.exp())**2)
     #.clamp(min=-10, max=10)
 
 
@@ -245,6 +245,13 @@ def trucated_normal_log_prob(mu, sd, value):
     log_denominator = sd.log() + (1 - standard_normal_cdf(-mu / sd)).log()
     # phi = 1 / np.sqrt(2 * np.pi) * torch.exp(-(value - mu) ** 2 / (2 * sd ** 2))
     # denominator = sd * (1 - standard_normal_cdf(-mu / sd))
+    return log_phi - log_denominator
+
+
+def trucated_normal_log_prob_stable(mu, log_std, value):
+    sd = log_std.exp()
+    log_phi = -np.log(np.sqrt(2 * np.pi)) - (value - mu) ** 2 / (2 * sd ** 2)
+    log_denominator = log_std + (1 - standard_normal_cdf(-mu / sd) + 1e-1).log()
     return log_phi - log_denominator
 
 

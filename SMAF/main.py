@@ -33,7 +33,7 @@ parser = argparse.ArgumentParser(description='PyTorch Flows')
 parser.add_argument(
     '--batch-size',
     type=int,
-    default=128,
+    default=256,
     help='input batch size for training (default: 100)')
 parser.add_argument(
     '--test-batch-size',
@@ -43,7 +43,7 @@ parser.add_argument(
 parser.add_argument(
     '--epochs',
     type=int,
-    default=1000,
+    default=100,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
     '--dataset',
@@ -90,7 +90,7 @@ parser.add_argument(
     help="activation"
     )
 parser.add_argument(
-    "--latent", type=int, default=10,
+    "--latent", type=int, default=5,
     help="number of latent layer in the flow"
     )
 parser.add_argument(
@@ -98,7 +98,7 @@ parser.add_argument(
     help='type of permute: none, spiral from center',
     )
 parser.add_argument(
-    '--lr', type=float, default=0.01, help='learning rate (default: 0.0001)')
+    '--lr', type=float, default=1e-5, help='learning rate (default: 0.0001)')
 parser.add_argument(
     '--flow', default='multiscale AR',
     help='flow to use: mixture-maf, multiscale AR, maf | realnvp | glow')
@@ -117,10 +117,10 @@ kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
 
 if args.jet_images == True:
     print('start to load data')
-    train_dataset = lagan_disretized_loader(subset='signal')
-    train_dataset = train_dataset.reshape(-1, 625)
-    # train_dataset = load_data_LAGAN(subset='signal')
+    # train_dataset = lagan_disretized_loader(subset='signal')
     # train_dataset = train_dataset.reshape(-1, 625)
+    train_dataset = load_data_LAGAN(subset='signal')
+    train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 
     # train_dataset = load_jet_image(num=50000, signal=1)
@@ -261,8 +261,8 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    window_area = 49
-    num_hidden = [window_area*10, (625-window_area)*1]
+    window_area = 225
+    num_hidden = [window_area*5, (625-window_area)*1]
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
@@ -279,11 +279,11 @@ for module in model.modules():
 model = model.cuda()
 if torch.cuda.device_count() > 1:
     print("Let's use", torch.cuda.device_count(), "GPUs!")
-    model = nn.DataParallel(model)
+    # model = nn.DataParallel(model)
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
 # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30], gamma=0.1, last_epoch=-1)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30], gamma=0.5, last_epoch=-1)
 
 # writer = SummaryWriter(comment=args.flow + "_" + args.dataset)
 global_step = 0
@@ -360,7 +360,7 @@ if args.input_permute == 'spiral from center':
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 10 == 0:
+    if epoch % 1 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
@@ -379,10 +379,10 @@ for epoch in range(args.epochs):
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 
-        if epoch % 10 == 0:
-            # distance = np.asarray(dist_list)
-            # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            torch.save(model.state_dict(), args.result_dir + '/lagan_logistic_model_{}.pt'.format(epoch))
+        if epoch % 5 == 0:
+        #     distance = np.asarray(dist_list)
+        #     print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
+            torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
             with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')
