@@ -33,7 +33,7 @@ parser = argparse.ArgumentParser(description='PyTorch Flows')
 parser.add_argument(
     '--batch-size',
     type=int,
-    default=256,
+    default=128,
     help='input batch size for training (default: 100)')
 parser.add_argument(
     '--test-batch-size',
@@ -43,7 +43,7 @@ parser.add_argument(
 parser.add_argument(
     '--epochs',
     type=int,
-    default=100,
+    default=50,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
     '--dataset',
@@ -98,9 +98,9 @@ parser.add_argument(
     help='type of permute: none, spiral from center',
     )
 parser.add_argument(
-    '--lr', type=float, default=1e-5, help='learning rate (default: 0.0001)')
+    '--lr', type=float, default=1e-4, help='learning rate (default: 0.0001)')
 parser.add_argument(
-    '--flow', default='multiscale AR',
+    '--flow', default='mixture-maf',
     help='flow to use: mixture-maf, multiscale AR, maf | realnvp | glow')
 
 
@@ -191,7 +191,7 @@ num_hidden = {
     'BSDS300': 512,
     'MOONS': 64,
     'MNIST': 1024,
-    'JetImages': 625
+    'JetImages': 1024
 }[args.dataset]
 
 act = 'tanh' if args.dataset is 'GAS' else 'relu'
@@ -261,8 +261,8 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    window_area = 225
-    num_hidden = [window_area*5, (625-window_area)*1]
+    window_area = 529
+    num_hidden = [window_area*3, (625-window_area)*1]
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
@@ -376,13 +376,13 @@ for epoch in range(args.epochs):
 
         dist = get_distance(eval_data.reshape(-1, image_size, image_size),
                             samples.reshape(-1, image_size, image_size), image_size=image_size)
-        with open(args.result_dir + '/distance_list.txt', 'a') as f:
-            f.write(str(dist) + ', \n')
+        # with open(args.result_dir + '/distance_list.txt', 'a') as f:
+        #     f.write(str(dist) + ', \n')
 
         if epoch % 5 == 0:
         #     distance = np.asarray(dist_list)
         #     print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
+        #     torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
             with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')

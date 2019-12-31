@@ -261,6 +261,7 @@ class MixtureNormalMADE(nn.Module):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+            log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
             # gamma, mu, log_std = self.ParameterFilter(gamma, mu, log_std)
             gamma = torch.sigmoid(gamma)
             u = (inputs - mu) * torch.exp(-log_std)
@@ -271,7 +272,7 @@ class MixtureNormalMADE(nn.Module):
                 # gamma = gamma * utils.get_psi(mu, torch.exp(log_std)) + gamma  Wrong could be >1
                 # gamma = gamma - gamma * utils.get_psi(mu.detach(), torch.exp(log_std).detach())
                 ll = torch.where(inputs > 0,
-                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, sd=log_std.exp(), value=inputs),
+                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=log_std, value=inputs),
                                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
                 # ll += discrete_mass(mu.view(-1,25,25)) + discrete_pt(mu.view(-1,25,25))
 
@@ -291,17 +292,18 @@ class MixtureNormalMADE(nn.Module):
 
         else:
             x = torch.zeros_like(inputs)
+            noise = torch.Tensor(inputs.size()).normal_().cuda()
             with torch.no_grad():
                 for i_col in range(inputs.shape[1]):
-                    # print(i_col)
                     h = self.joiner(x, cond_inputs)
                     gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                    log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                     gamma = torch.sigmoid(gamma[:, i_col])
 
                     if method == "reshaped normal":
                         # gamma = (1 - gamma) * utils.get_psi(mu[:, i_col], torch.exp(log_std[:, i_col])) + gamma
                         z = Bernoulli(probs=gamma).sample()
-                        nonzeros = inputs[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
+                        nonzeros = noise[:, i_col] * torch.exp(log_std[:, i_col]) + mu[:, i_col]
                         x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
 
                     elif method == "truncated normal":
@@ -313,7 +315,8 @@ class MixtureNormalMADE(nn.Module):
                         # nonzeros = torch.tensor(nonzeros, dtype=torch.float).detach()
                         z = Bernoulli(probs=gamma).sample()
                         x[:, i_col] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                            # torch.tensor(np.where(z > 0, nonzeros, np.zeros_like(nonzeros)), dtype=torch.float).cuda()
+                    # if i_col == 0:
+                    #     x[:, i_col] = inputs[:, i_col]
             return x.clamp(min=0)
 
 
@@ -398,15 +401,14 @@ class FlowSequential(nn.Sequential):
             #                  (1-gamma).log()).sum(dim=-1, keepdim=True)
             return ll
 
-    def sample(self, num_samples=None, noise=None, cond_inputs=None, input_size=1024):
-        # input_size =
+    def sample(self, inputs, noise=None, cond_inputs=None, input_size=1024):
         if noise is None:
-            noise = torch.Tensor(num_samples, input_size).normal_()
+            noise = torch.Tensor(1000, input_size).normal_().cuda()
         device = next(self.parameters()).device
         noise = noise.to(device)
         if cond_inputs is not None:
             cond_inputs = cond_inputs.to(device)
-        samples = self.forward(noise, cond_inputs, mode='inverse')
+        samples = self.forward(inputs, cond_inputs, mode='inverse')
         return samples
 
 

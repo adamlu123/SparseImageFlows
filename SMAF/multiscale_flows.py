@@ -178,11 +178,13 @@ class ARBase(nn.Module):
                  num_cond_inputs=None,
                  act=None,
                  num_latent_layer=2,
-                 type=None):
+                 type=None,
+                 inner=False):
         super(ARBase, self).__init__()
-        activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
+        activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh, 'GeLU': utils.GeLU}
         act_func = activations[act]
         self.type = type
+        self.inner = inner
 
         # create mask
         input_mask, hidden_mask, output_mask = create_mask(num_inputs, num_hidden, type)
@@ -218,16 +220,13 @@ class ARBase(nn.Module):
 
         elif 'logistic' in type:
             self.conv1d_pi = nn.Sequential(
-                nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1), nn.BatchNorm1d(5), nn.ReLU(),
-                nn.Conv1d(in_channels=5, out_channels=10, stride=1, kernel_size=1)
+                nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1)
             )
             self.conv1d_mu = nn.Sequential(
-                nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1), nn.BatchNorm1d(5), nn.ReLU(),
-                nn.Conv1d(in_channels=5, out_channels=10, stride=1, kernel_size=1)
+                nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1)
             )
             self.conv1d_sd = nn.Sequential(
-                nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1), nn.BatchNorm1d(5), nn.ReLU(),
-                nn.Conv1d(in_channels=5, out_channels=10, stride=1, kernel_size=1)
+                nn.Conv1d(in_channels=1, out_channels=5, stride=1, kernel_size=1)
             )
 
 
@@ -275,7 +274,7 @@ class ARBase(nn.Module):
                         x[:, i] = nonzeros
 
                     elif self.type == 'masked softmax':
-                        gamma, theta = self.trunk(h).chunk(2, 1)  #
+                        gamma, theta = self.trunk(h).chunk(2, 1)
                         # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
                         gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
@@ -288,11 +287,12 @@ class ARBase(nn.Module):
 
                     elif self.type == 'masked truncated normal':
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                        log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                         gamma = 1 - torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
-                        nonzeros = noise[:, i] * torch.exp(log_std[:, i]).clamp(min=1e-3, max=1e3) + mu[:, i]
+                        nonzeros = noise[:, i] * torch.exp(log_std[:, i]) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
-                        if i == 0 and inputs.shape[1] == 225:
+                        if i == 0 and self.inner:
                             x[:, i] = inputs[:, i]
 
                     elif self.type == 'masked reshaped normal':
@@ -308,9 +308,9 @@ class ARBase(nn.Module):
 
                     elif self.type == 'logistic':
                         pi, mu, log_s = self.trunk(h).chunk(3, 1)
-                        pi = self.conv1d_pi(pi.view(-1, 1, input_dim))   # shape=(batch, 10, 1)
+                        pi = self.conv1d_pi(pi.view(-1, 1, input_dim)).clamp(min=1e-5)   # shape=(batch, 10, 1)
                         mu = self.conv1d_mu(mu.view(-1, 1, input_dim))
-                        log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim))
+                        log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim)).clamp(min=np.log(1e-2), max=np.log(1e2))
                         pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
                         x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
                         if i == 0 and inputs.shape[1] == 225:
@@ -333,7 +333,7 @@ class MultiscaleAR(nn.Module):
                  type ='masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal
         super(MultiscaleAR, self).__init__()
 
-        self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type)
+        self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type, inner=True)
         self.ARouter = ARBase(num_inputs-window_area, num_hidden[1], window_area, act, num_latent_layer, type)
         self.window_area = window_area
         self.type = type
@@ -408,8 +408,8 @@ class MultiscaleAR(nn.Module):
                 inputs = inputs.unsqueeze(1).repeat(1, pi.shape[1], 1)  # shape=(batch, 10, 625)
                 nonzeros = pi*(torch.sigmoid((inputs+0.5-mu)/s) - torch.sigmoid((inputs-0.5-mu)/s))
                 zeros = pi*torch.sigmoid((inputs+0.5-mu)/s)
-                ll = torch.where(inputs > 0, nonzeros, zeros)
-                ll = ll.sum(dim=1)
+                ll = torch.where(inputs > 0, nonzeros.log(), zeros.log())
+                ll = ll.sum(dim=[1,2])
                 self.gamma = torch.tensor([0.])
             return ll
 

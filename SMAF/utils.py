@@ -82,7 +82,7 @@ def load_data_LAGAN(subset='signal'):
 def lagan_disretized_loader(subset='concatenate'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir + '/discretized_lagan.h5', 'r') as f:
-        image = np.asarray(f[subset][:])
+        image = np.asarray(f[subset][:20000])
     print('image shape', image.shape)
     return image
 
@@ -299,9 +299,12 @@ class ChiSquareTest(object):
         return count
 
 
+class GeLU(nn.Module):
+    def __init__(self):
+        super(GeLU, self).__init__()
 
-
-
+    def forward(self, x):
+        return 0.5 * x * (1 + torch.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x ** 3)))
 
 
 
