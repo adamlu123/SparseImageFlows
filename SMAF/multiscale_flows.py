@@ -282,13 +282,13 @@ class ARBase(nn.Module):
                         probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
                         nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                        if i == 0 and inputs.shape[1] == 49:
+                        if i == 0 and self.inner:
                             x[:, i] = inputs[:, i]
 
                     elif self.type == 'masked truncated normal':
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                         log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
-                        gamma = 1 - torch.sigmoid(gamma[:, i])
+                        gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
                         nonzeros = noise[:, i] * torch.exp(log_std[:, i]) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
@@ -313,7 +313,7 @@ class ARBase(nn.Module):
                         log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim)).clamp(min=np.log(1e-2), max=np.log(1e2))
                         pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
                         x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
-                        if i == 0 and inputs.shape[1] == 225:
+                        if i == 0 and self.inner:
                             x[:, i] = inputs[:, i]
 
             # x = torch.floor(x+0.5)
@@ -352,8 +352,8 @@ class MultiscaleAR(nn.Module):
                 nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(),
                                                reduction="none")  # shape=(batchsize, 625)
                 ll = torch.where(inputs > 0,
-                                 1e-2*(gamma + 1e-10).log() - nll_positive,
-                                 1e-2*(1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                                 (gamma + 1e-10).log() - nll_positive,
+                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'softmax':
                 pred_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
@@ -379,8 +379,8 @@ class MultiscaleAR(nn.Module):
                 gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma  # here gamma = p(z=0)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
-                                 (1 - gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=log_std, value=inputs),
-                                 (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=log_std, value=inputs),
+                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'masked reshaped normal':
                 gamma_i, mu_i, log_std_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
@@ -409,7 +409,7 @@ class MultiscaleAR(nn.Module):
                 nonzeros = pi*(torch.sigmoid((inputs+0.5-mu)/s) - torch.sigmoid((inputs-0.5-mu)/s))
                 zeros = pi*torch.sigmoid((inputs+0.5-mu)/s)
                 ll = torch.where(inputs > 0, nonzeros.log(), zeros.log())
-                ll = ll.sum(dim=[1,2])
+                ll = ll.sum(dim=[1, 2])
                 self.gamma = torch.tensor([0.])
             return ll
 

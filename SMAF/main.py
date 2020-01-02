@@ -43,7 +43,7 @@ parser.add_argument(
 parser.add_argument(
     '--epochs',
     type=int,
-    default=50,
+    default=100,
     help='number of epochs to train (default: 1000)')
 parser.add_argument(
     '--dataset',
@@ -86,7 +86,7 @@ parser.add_argument(
     help="result directory"
     )
 parser.add_argument(
-    "--activation", type=str, default='relu',
+    "--activation", type=str, default='GeLU',
     help="activation"
     )
 parser.add_argument(
@@ -100,7 +100,7 @@ parser.add_argument(
 parser.add_argument(
     '--lr', type=float, default=1e-4, help='learning rate (default: 0.0001)')
 parser.add_argument(
-    '--flow', default='mixture-maf',
+    '--flow', default='multiscale AR',
     help='flow to use: mixture-maf, multiscale AR, maf | realnvp | glow')
 
 
@@ -261,8 +261,8 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    window_area = 529
-    num_hidden = [window_area*3, (625-window_area)*1]
+    window_area = 49
+    num_hidden = [window_area*5, (625-window_area)*1]
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
@@ -283,8 +283,7 @@ if torch.cuda.device_count() > 1:
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
 # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 20, 30], gamma=0.5, last_epoch=-1)
-
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100], gamma=0.5, last_epoch=-1)  # 10, 20, 30
 # writer = SummaryWriter(comment=args.flow + "_" + args.dataset)
 global_step = 0
 
@@ -364,7 +363,7 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.sample(torch.tensor(train_dataset[:1000, :]).cuda(), input_size=image_size**2)
+        samples = model.sample(torch.tensor(train_dataset[:2000, :]).cuda(), input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':
             # print(ind[inverse_ind])
@@ -382,7 +381,7 @@ for epoch in range(args.epochs):
         if epoch % 5 == 0:
         #     distance = np.asarray(dist_list)
         #     print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-        #     torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
+            torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
             with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')
