@@ -25,11 +25,8 @@ import plot_utils
 
 
 
-if sys.version_info < (3, 6):
-    print('Sorry, this code might need Python 3.6 or higher')
 
-# Training settings
-parser = argparse.ArgumentParser(description='PyTorch Flows')
+parser = argparse.ArgumentParser(description='Sparse Auto-regressive Flows')
 parser.add_argument(
     '--batch-size',
     type=int,
@@ -119,7 +116,7 @@ if args.jet_images == True:
     print('start to load data')
     # train_dataset = lagan_disretized_loader(subset='signal')
     # train_dataset = train_dataset.reshape(-1, 625)
-    train_dataset = load_data_LAGAN(subset='signal')
+    train_dataset = load_data_LAGAN(subset='background')
     train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 
@@ -132,64 +129,14 @@ if args.jet_images == True:
     print('data_shape', train_dataset.shape)
     num_cond_inputs = None
 
-# else:
-#     assert args.dataset in [
-#         'POWER', 'GAS', 'HEPMASS', 'MINIBONE', 'BSDS300', 'MOONS', 'MNIST'
-#     ]
-#     dataset = getattr(datasets, args.dataset)()
-#
-#     if args.cond:
-#         assert args.flow in ['maf', 'realnvp'] and args.dataset == 'MNIST', \
-#             'Conditional flows are implemented only for maf and MNIST'
-#
-#         train_tensor = torch.from_numpy(dataset.trn.x)
-#         train_labels = torch.from_numpy(dataset.trn.y)
-#         train_dataset = torch.utils.data.TensorDataset(train_tensor, train_labels)
-#
-#         valid_tensor = torch.from_numpy(dataset.val.x)
-#         valid_labels = torch.from_numpy(dataset.val.y)
-#         valid_dataset = torch.utils.data.TensorDataset(valid_tensor, valid_labels)
-#
-#         test_tensor = torch.from_numpy(dataset.tst.x)
-#         test_labels = torch.from_numpy(dataset.tst.y)
-#         test_dataset = torch.utils.data.TensorDataset(test_tensor, test_labels)
-#         num_cond_inputs = 10
-#     else:
-#         train_tensor = torch.from_numpy(dataset.trn.x)
-#         train_dataset = torch.utils.data.TensorDataset(train_tensor)
-#
-#         valid_tensor = torch.from_numpy(dataset.val.x)
-#         valid_dataset = torch.utils.data.TensorDataset(valid_tensor)
-#
-#         test_tensor = torch.from_numpy(dataset.tst.x)
-#         test_dataset = torch.utils.data.TensorDataset(test_tensor)
-#         num_cond_inputs = None
 
 train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
-valid_loader = torch.utils.data.DataLoader(
-    train_dataset,
-    batch_size=args.test_batch_size,
-    shuffle=False,
-    drop_last=False,
-    **kwargs)
 
-test_loader = torch.utils.data.DataLoader(
-    train_dataset,
-    batch_size=args.test_batch_size,
-    shuffle=False,
-    drop_last=False,
-    **kwargs)
 
 num_inputs = train_dataset.shape[1]  # dataset.n_dims
 num_hidden = {
-    'POWER': 100,
-    'GAS': 100,
-    'HEPMASS': 512,
-    'MINIBOONE': 512,
-    'BSDS300': 512,
-    'MOONS': 64,
     'MNIST': 1024,
     'JetImages': 1024
 }[args.dataset]
@@ -198,57 +145,8 @@ act = 'tanh' if args.dataset is 'GAS' else 'relu'
 
 modules = []
 
-assert args.flow in ['multiscale AR', 'mixture-maf', 'maf', 'maf-split', 'maf-split-glow', 'realnvp', 'glow']
-if args.flow == 'glow':
-    mask = torch.arange(0, num_inputs) % 2
-    mask = mask.to(device).float()
-
-    print("Warning: Results for GLOW are not as good as for MAF yet.")
-    for _ in range(args.num_blocks):
-        modules += [
-            fnn.BatchNormFlow(num_inputs),
-            fnn.LUInvertibleMM(num_inputs),
-            fnn.CouplingLayer(
-                num_inputs, num_hidden, mask, num_cond_inputs,
-                s_act='tanh', t_act='relu')
-        ]
-    mask = 1 - mask
-elif args.flow == 'realnvp':
-    mask = torch.arange(0, num_inputs) % 2
-    mask = mask.to(device).float()
-
-    for _ in range(args.num_blocks):
-        modules += [
-            fnn.CouplingLayer(
-                num_inputs, num_hidden, mask, num_cond_inputs,
-                s_act='tanh', t_act='relu'),
-            fnn.BatchNormFlow(num_inputs)
-        ]
-        mask = 1 - mask
-elif args.flow == 'maf':
-    for _ in range(args.num_blocks):
-        modules += [
-            fnn.MADE(num_inputs, num_hidden, num_cond_inputs, act=act),
-            fnn.BatchNormFlow(num_inputs),
-            fnn.Reverse(num_inputs)
-        ]
-elif args.flow == 'maf-split':
-    for _ in range(args.num_blocks):
-        modules += [
-            fnn.MADESplit(num_inputs, num_hidden, num_cond_inputs,
-                          s_act='tanh', t_act='relu'),
-            fnn.BatchNormFlow(num_inputs),
-            fnn.Reverse(num_inputs)
-        ]
-elif args.flow == 'maf-split-glow':
-    for _ in range(args.num_blocks):
-        modules += [
-            fnn.MADESplit(num_inputs, num_hidden, num_cond_inputs,
-                          s_act='tanh', t_act='relu'),
-            fnn.BatchNormFlow(num_inputs),
-            fnn.InvertibleMM(num_inputs)
-        ]
-elif args.flow == 'mixture-maf':
+assert args.flow in ['multiscale AR', 'mixture-maf', 'maf']
+if args.flow == 'mixture-maf':
     modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
                                       act=args.activation, num_latent_layer=args.latent)]
     model = fnn.FlowSequential(*modules)
@@ -261,7 +159,7 @@ elif args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    window_area = 49
+    window_area = 361
     num_hidden = [window_area*5, (625-window_area)*1]
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
@@ -375,14 +273,14 @@ for epoch in range(args.epochs):
 
         dist = get_distance(eval_data.reshape(-1, image_size, image_size),
                             samples.reshape(-1, image_size, image_size), image_size=image_size)
-        # with open(args.result_dir + '/distance_list.txt', 'a') as f:
-        #     f.write(str(dist) + ', \n')
+        with open(args.result_dir + '/distance_list.txt', 'a') as f:
+            f.write(str(dist) + ', \n')
 
-        if epoch % 5 == 0:
+        # if epoch % 5 == 0:
         #     distance = np.asarray(dist_list)
         #     print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
-            with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
-                pkl.dump(samples.tolist(), f)
-                print('generated images saved!')
+        #     torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
+        #     with open(args.result_dir + '/background_Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
+        #         pkl.dump(samples.tolist(), f)
+        #         print('generated images saved!')
 

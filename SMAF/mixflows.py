@@ -189,7 +189,6 @@ class MixtureGammaMADE(nn.Module):
                                    nn.MaskedLinear(num_hidden, num_inputs * 2,
                                                    output_mask))
 
-    #
     def forward(self, inputs, cond_inputs=None, mode='direct'):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
@@ -287,7 +286,6 @@ class MixtureNormalMADE(nn.Module):
             self.gamma = gamma.detach().cpu().numpy()
             self.mu = mu.detach().cpu().numpy()
             self.log_std = log_std.detach().cpu().numpy()
-
             return u, -log_std, ll
 
         else:

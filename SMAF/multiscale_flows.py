@@ -460,17 +460,3 @@ class FlowSequential(nn.Sequential):
             cond_inputs = cond_inputs.to(device)
         samples = self.forward(inputs, cond_inputs, mode='inverse')
         return samples
-
-
-
-
-
-
-
-
-
-
-
-
-
-
