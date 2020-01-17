@@ -141,10 +141,8 @@ num_hidden = {
     'JetImages': 1024
 }[args.dataset]
 
-act = 'tanh' if args.dataset is 'GAS' else 'relu'
 
 modules = []
-
 assert args.flow in ['multiscale AR', 'mixture-maf', 'maf']
 if args.flow == 'mixture-maf':
     modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
@@ -159,7 +157,7 @@ if args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    window_area = 361
+    window_area = 9
     num_hidden = [window_area*5, (625-window_area)*1]
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
@@ -181,6 +179,7 @@ if torch.cuda.device_count() > 1:
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=0)
 # optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+# scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10, eta_min=1e-5, last_epoch=-1)
 scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100], gamma=0.5, last_epoch=-1)  # 10, 20, 30
 # writer = SummaryWriter(comment=args.flow + "_" + args.dataset)
 global_step = 0
@@ -261,7 +260,7 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.sample(torch.tensor(train_dataset[:2000, :]).cuda(), input_size=image_size**2)
+        samples = model.sample(torch.tensor(train_dataset[:200, :]).cuda(), input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':
             # print(ind[inverse_ind])
@@ -270,6 +269,10 @@ for epoch in range(args.epochs):
 
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
+
+        # tau21 = []
+        # for i in range(eval_data.shape[0]):
+        #     tau21.append(plot_utils.tau21(eval_data[i].reshape(25, 25)))
 
         dist = get_distance(eval_data.reshape(-1, image_size, image_size),
                             samples.reshape(-1, image_size, image_size), image_size=image_size)

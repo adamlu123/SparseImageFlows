@@ -112,33 +112,35 @@ class MaskedLinear(nn.Module):
 nn.MaskedLinear = MaskedLinear
 
 
-def create_mask(num_inputs, num_hidden, type):
+def create_mask(num_inputs, num_hidden, type, softmax_latent):
     input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type='input')
     hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
     if type == 'masked softmax':
-        output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
+        output_mask = get_mask(num_hidden, num_inputs * (1+softmax_latent), num_inputs, mask_type='output')
     elif type == 'masked truncated normal' or type == 'masked reshaped normal':
         output_mask = get_mask(num_hidden, num_inputs * 3, num_inputs, mask_type='output')
     elif type == 'softmax':
-        output_mask = get_mask(num_hidden, num_inputs * 1, num_inputs, mask_type='output')
+        output_mask = get_mask(num_hidden, num_inputs * softmax_latent, num_inputs, mask_type='output')
     elif type == 'logistic':
         output_mask = get_mask(num_hidden, num_inputs * 3, num_inputs, mask_type='output')
     return input_mask, hidden_mask, output_mask
 
 
 def create_joiner_trunk(num_inputs, num_hidden, num_cond_inputs, act_func, num_latent_layer,
-                   input_mask, hidden_mask, output_mask, type):
+                   input_mask, hidden_mask, output_mask, type, softmax_latent):
     joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask, num_cond_inputs)
     latent_modules = []
+    # hidden layers (currently using the same mask as joiner)
     for i in range(num_latent_layer):
         latent_modules.append(act_func())
         latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden, hidden_mask))
+    # output layers
     if type == 'masked softmax':
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 2, output_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * (1+softmax_latent), output_mask))
     elif type == 'masked truncated normal':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, output_mask))
     elif type == 'softmax':
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 1, output_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * softmax_latent, output_mask))
     elif type == 'logistic':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, output_mask))
     trunk = nn.Sequential(*latent_modules)
@@ -179,26 +181,28 @@ class ARBase(nn.Module):
                  act=None,
                  num_latent_layer=2,
                  type=None,
-                 inner=False):
+                 inner=False,
+                 softmax_latent=100):
         super(ARBase, self).__init__()
         activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh, 'GeLU': utils.GeLU}
         act_func = activations[act]
         self.type = type
         self.inner = inner
+        self.softmax_latent = softmax_latent
 
         # create mask
-        input_mask, hidden_mask, output_mask = create_mask(num_inputs, num_hidden, type)
+        input_mask, hidden_mask, output_mask = create_mask(num_inputs, num_hidden, type, softmax_latent)
 
         # create sub modules: joiner and trunk
         self.joiner, self.trunk = create_joiner_trunk(num_inputs, num_hidden, num_cond_inputs, act_func, num_latent_layer,
-                    input_mask, hidden_mask, output_mask, type)
+                    input_mask, hidden_mask, output_mask, type, softmax_latent)
 
         # deconvolution to match the shape
         if 'softmax' in type:
             self.conv1d = nn.Sequential(
-                nn.Conv1d(in_channels=1, out_channels=90, stride=1, kernel_size=1), nn.BatchNorm1d(90), nn.ReLU(),
-                nn.Conv1d(in_channels=90, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
-                nn.Conv1d(in_channels=180, out_channels=277, stride=1, kernel_size=1)
+                # nn.Conv1d(in_channels=softmax_latent, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
+                # nn.Conv1d(in_channels=90, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
+                nn.Conv1d(in_channels=softmax_latent, out_channels=277, stride=1, kernel_size=1)
             )
             if 'mask' in type:
                 self.conv1d_gamma = nn.Conv1d(in_channels=1, out_channels=1, stride=1, kernel_size=1)
@@ -239,13 +243,14 @@ class ARBase(nn.Module):
             h = self.joiner(inputs, cond_inputs)
             if self.type == 'softmax':
                 theta = self.trunk(h)
-                return self.conv1d(theta.view(-1, 1, input_dim))  # shape=(batch, 277, 625)
+                return self.conv1d(theta.view(-1, self.softmax_latent, input_dim))  # shape=(batch, 277, 625)
             elif self.type == 'masked softmax':
-                gamma, theta = self.trunk(h).chunk(2, 1)
+                h = self.trunk(h)
+                gamma, theta = h[:, :input_dim], h[:, input_dim:].reshape(-1, self.softmax_latent, input_dim)
                 # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim))
                 gamma = gamma.unsqueeze(1)
                 gamma = torch.sigmoid(gamma)
-                pred = self.conv1d(theta.view(-1,1,input_dim))  # shape=(batch, 277, 625)
+                pred = self.conv1d(theta.view(-1, self.softmax_latent, input_dim))  # shape=(batch, 277, 625)
                 return gamma, pred
             elif self.type == 'masked truncated normal' or self.type == 'masked reshaped normal':
                 gamma, mu, log_std = self.trunk(h).chunk(3, 1)
@@ -268,17 +273,19 @@ class ARBase(nn.Module):
                     h = self.joiner(x.view(-1, input_dim), cond_inputs)
                     if self.type == 'softmax':
                         theta = self.trunk(h)
-                        out = self.conv1d(theta.view(-1, 1, input_dim))
+                        out = self.conv1d(theta.view(-1, self.softmax_latent, input_dim))
                         probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
                         nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
                         x[:, i] = nonzeros
 
                     elif self.type == 'masked softmax':
-                        gamma, theta = self.trunk(h).chunk(2, 1)
+                        h = self.trunk(h)
+                        gamma, theta = h[:, :input_dim], h[:, input_dim:].reshape(-1, self.softmax_latent, input_dim)
+                        # gamma, theta = self.trunk(h).chunk(2, 1)
                         # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
                         gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
-                        out = self.conv1d(theta.view(-1,1,input_dim))
+                        out = self.conv1d(theta.view(-1, self.softmax_latent, input_dim))
                         probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
                         nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
@@ -290,7 +297,7 @@ class ARBase(nn.Module):
                         log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                         gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
-                        nonzeros = noise[:, i] * torch.exp(log_std[:, i]) + mu[:, i]
+                        nonzeros = noise[:, i] * torch.exp(0.5*log_std[:, i]) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
                         if i == 0 and self.inner:
                             x[:, i] = inputs[:, i]
@@ -372,14 +379,15 @@ class MultiscaleAR(nn.Module):
                 gamma_o, mu_o, log_std_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
 
                 gamma = torch.cat([gamma_i, gamma_o], -1)
+
                 mu = torch.cat([mu_i, mu_o], -1)
                 log_std = torch.cat([log_std_i, log_std_o], -1)
 
                 log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
-                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(log_std)) + gamma  # here gamma = p(z=0)
+                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
-                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=log_std, value=inputs),
+                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5*log_std, value=inputs),
                                  (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'masked reshaped normal':

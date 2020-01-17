@@ -4,7 +4,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.colors import LogNorm, Normalize
-
+import math
+import copy
 image_size = 25
 grid = 0.5 * (np.linspace(-1.25, 1.25, image_size+1)[:-1] + np.linspace(-1.25, 1.25, image_size+1)[1:])
 eta = np.tile(grid, (image_size, 1))
@@ -49,7 +50,6 @@ def dphi(phi1, phi2):
     '''
     Calculates the difference between two angles avoiding |phi1 - phi2| > 180 degrees
     '''
-    import math
     return math.acos(math.cos(abs(phi1 - phi2)))
 
 
@@ -67,9 +67,8 @@ def _tau1(jet_image):
     tau1_axis_eta = eta.ravel()[np.argmax(jet_image)]
     tau1_axis_phi = phi.ravel()[np.argmax(jet_image)]
     tau1 = np.sum(jet_image *
-            np.sqrt(np.square(tau1_axis_eta - eta) + np.square([dphi(tau1_axis_phi, p) for p in phi.ravel()]).reshape(25, 25))
-                 )
-    return tau1 / np.sum(jet_image) # normalize by the total intensity
+            np.sqrt(np.square(tau1_axis_eta - eta) + np.square([dphi(tau1_axis_phi, p) for p in phi.ravel()]).reshape(25, 25)) )
+    return tau1 / np.sum(jet_image)  # normalize by the total intensity
 
 
 def _tau2(jet_image):
@@ -85,11 +84,11 @@ def _tau2(jet_image):
     ------
         slow implementation
     '''
-    proto = np.array(zip(jet_image[jet_image != 0],
+    proto = zip(jet_image[jet_image != 0],
                          eta[jet_image != 0],
-                         phi[jet_image != 0]))
-
-    while len(proto) > 2:
+                         phi[jet_image != 0])
+    proto_temp = copy.deepcopy(proto)
+    while len(list(proto_temp)) > 2:
         candidates = [
             (
                 (i, j),
@@ -120,6 +119,7 @@ def _tau2(jet_image):
         proto[pix1] = (pt_add, eta_add, phi_add)
 
         proto = np.delete(proto, pix2, axis=0).tolist()
+        proto_temp = proto
 
     (_, eta1, phi1), (_, eta2, phi2) = proto
     np.sqrt(np.square(eta - eta1) + np.square(phi - phi1))
