@@ -158,7 +158,7 @@ if args.flow == 'mixture-maf':
 
 elif args.flow == 'multiscale AR':
     window_area = 9
-    num_hidden = [window_area*5, (625-window_area)*1]
+    num_hidden = [window_area*50, (625-window_area)*1]
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
@@ -206,15 +206,20 @@ def train(epoch):
         # loss = -model(data, mode='direct').mean()
         loss = -model.log_probs(data).mean()
         gamma = model._modules['0'].gamma
+        log_phi, log_denominator = model._modules['0'].ll_trunc_norm, model._modules['0'].log_denominator
+        log_std = model._modules['0'].log_std
+
         # mu = model._modules['0'].mu
-        # log_std = model._modules['0'].log_std
         # u = model.u
         # log_jacob = model.log_jacob
 
         if batch_idx % args.log_interval == 0:
             print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
+            print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
+            print('log_phi min:{}, max:{}, mean:{}'.format(log_phi.min(), log_phi.max(), log_phi.mean()))
+            print('log_denominator min:{}, max:{}, mean:{}'.format(log_denominator.min(), log_denominator.max(), log_denominator.mean()))
+
             # print('mu min:{}, mu max:{}, mu mean:{}'.format(mu.min(), mu.max(), mu.mean()))
-            # print('log_std min:{}, max:{}, mean:{}'.format(log_std.min(), log_std.max(), log_std.mean()))
             # print('u min:{}, max:{}, mean:{}'.format(u.min(), u.max(), u.mean()))
             # print('log_jacob min:{}, max:{}, mean:{}'.format(log_jacob.min(), log_jacob.max(), log_jacob.mean()))
         train_loss += loss.item()
@@ -256,7 +261,7 @@ if args.input_permute == 'spiral from center':
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 1 == 0:
+    if epoch % 10 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
@@ -269,21 +274,24 @@ for epoch in range(args.epochs):
 
         duration = time.time() - start
         print('end sampling, duration:{}'.format(duration))
+        #
+        dist = get_distance(eval_data.reshape(-1, image_size, image_size),
+                            samples.reshape(-1, image_size, image_size), image_size=image_size)
+        # with open(args.result_dir + '/distance_list.txt', 'a') as f:
+        #     f.write(str(dist) + ', \n')
 
         # tau21 = []
         # for i in range(eval_data.shape[0]):
         #     tau21.append(plot_utils.tau21(eval_data[i].reshape(25, 25)))
 
-        dist = get_distance(eval_data.reshape(-1, image_size, image_size),
-                            samples.reshape(-1, image_size, image_size), image_size=image_size)
-        with open(args.result_dir + '/distance_list.txt', 'a') as f:
-            f.write(str(dist) + ', \n')
+
 
         # if epoch % 5 == 0:
-        #     distance = np.asarray(dist_list)
-        #     print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-        #     torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
-        #     with open(args.result_dir + '/background_Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
-        #         pkl.dump(samples.tolist(), f)
-        #         print('generated images saved!')
+            # distance = np.asarray(dist_list)
+            # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
+            # torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
+
+            # with open(args.result_dir + '/background_Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
+            #     pkl.dump(samples.tolist(), f)
+            #     print('generated images saved!')
 

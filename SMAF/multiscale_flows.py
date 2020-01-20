@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch.distributions import Gamma, Bernoulli, Uniform
 import utils
 import plot_utils
+from torch.distributions.exponential import Exponential
 
 inverse_ind = np.loadtxt('inverse_ind.txt')
 image_size = 25
@@ -123,6 +124,8 @@ def create_mask(num_inputs, num_hidden, type, softmax_latent):
         output_mask = get_mask(num_hidden, num_inputs * softmax_latent, num_inputs, mask_type='output')
     elif type == 'logistic':
         output_mask = get_mask(num_hidden, num_inputs * 3, num_inputs, mask_type='output')
+    elif type == 'masked exponential':
+        output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
     return input_mask, hidden_mask, output_mask
 
 
@@ -137,12 +140,15 @@ def create_joiner_trunk(num_inputs, num_hidden, num_cond_inputs, act_func, num_l
     # output layers
     if type == 'masked softmax':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * (1+softmax_latent), output_mask))
-    elif type == 'masked truncated normal':
+    elif type == 'masked truncated normal' or type == 'masked reshaped normal':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, output_mask))
     elif type == 'softmax':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * softmax_latent, output_mask))
     elif type == 'logistic':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, output_mask))
+    elif type == 'masked exponential':
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 2, output_mask))
+
     trunk = nn.Sequential(*latent_modules)
     return joiner, trunk
 
@@ -243,6 +249,7 @@ class ARBase(nn.Module):
             h = self.joiner(inputs, cond_inputs)
             if self.type == 'softmax':
                 theta = self.trunk(h)
+                # return theta.view(-1, self.softmax_latent, input_dim)
                 return self.conv1d(theta.view(-1, self.softmax_latent, input_dim))  # shape=(batch, 277, 625)
             elif self.type == 'masked softmax':
                 h = self.trunk(h)
@@ -263,6 +270,11 @@ class ARBase(nn.Module):
                 mu = self.conv1d_mu(mu.view(-1, 1, input_dim))
                 log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim))
                 return pi, mu, log_s
+
+            elif self.type == 'masked exponential':
+                gamma, log_lambda = self.trunk(h).chunk(2, 1)
+                gamma = torch.sigmoid(gamma)
+                return gamma, log_lambda
 
         # sampling
         else:
@@ -296,6 +308,8 @@ class ARBase(nn.Module):
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                         log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                         gamma = torch.sigmoid(gamma[:, i])
+                        # p = gamma/(1-utils.get_psi(mu[:, i], torch.exp(0.5 * log_std[:, i])))#(1-gamma) / (1-utils.get_psi(mu[:, i], torch.exp(0.5 * log_std[:, i])))
+                        # gamma = (1 - gamma) * utils.get_psi(mu[:, i], torch.exp(0.5 * log_std[:, i])) + gamma
                         z = Bernoulli(probs=gamma).sample()
                         nonzeros = noise[:, i] * torch.exp(0.5*log_std[:, i]) + mu[:, i]
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
@@ -306,8 +320,10 @@ class ARBase(nn.Module):
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                         gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
+                        if i == 563:
+                            print(i, inputs.shape[0], mu.mean(), log_std.mean())
                         nonzeros = utils.truncated_normal_sample(mu=mu[:, i],
-                                                                 sigma=log_std[:, i],
+                                                                 sigma=log_std[:, i].clamp(min=np.log(1e-3), max=np.log(1e3)).exp(),
                                                                  num_samples=inputs.shape[0])
                         x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
                         if i == 0 and inputs.shape[1] == 225:
@@ -320,6 +336,15 @@ class ARBase(nn.Module):
                         log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim)).clamp(min=np.log(1e-2), max=np.log(1e2))
                         pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
                         x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
+                        if i == 0 and self.inner:
+                            x[:, i] = inputs[:, i]
+
+                    elif self.type == 'masked exponential':
+                        gamma, log_lambda = self.trunk(h).chunk(2, 1)
+                        gamma = torch.sigmoid(gamma[:, i])
+                        z = Bernoulli(probs=gamma).sample()
+                        nonzeros = Exponential(rate=log_lambda[:, i].exp().clamp(min=np.log(1e-2), max=np.log(1e2))).sample()
+                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
                         if i == 0 and self.inner:
                             x[:, i] = inputs[:, i]
 
@@ -337,7 +362,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal
+                 type ='masked reshaped normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type, inner=True)
@@ -387,8 +412,8 @@ class MultiscaleAR(nn.Module):
                 gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
-                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5*log_std, value=inputs),
-                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5*log_std, value=inputs), # -0.05*mu**2
+                                 (1-gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
             elif self.type == 'masked reshaped normal':
                 gamma_i, mu_i, log_std_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
@@ -396,12 +421,13 @@ class MultiscaleAR(nn.Module):
                 gamma_o, mu_o, log_std_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
                 gamma = torch.cat([gamma_i, gamma_o], -1)
                 mu = torch.cat([mu_i, mu_o], -1)
-                log_std = torch.cat([log_std_i, log_std_o], -1).clamp(min=np.log(1e-3), max=np.log(1e3))
+                log_std = torch.cat([log_std_i, log_std_o], -1).clamp(min=np.log(1e-3), max=np.log(1e2))
+                self.log_std = log_std
                 self.gamma = gamma
+                self.ll_trunc_norm, self.log_phi, self.log_denominator = utils.trucated_normal_log_prob_stable(mu=mu, log_std=log_std, value=inputs)
                 ll = torch.where(inputs > 0,
-                                 (1 - gamma + 1e-10).log() + utils.trucated_normal_log_prob_stable(mu=mu, log_std=log_std,
-                                                                                   value=inputs),
-                                 (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                                 (1 - gamma + 1e-10).log() + self.ll_trunc_norm,
+                                 (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)  # (128, 1)
 
             elif self.type == 'logistic':
                 pi_i, mu_i, log_s_i = self.ARinner(inputs[:, :self.window_area], mode='direct')  # shape=(batch, 10, 49)
@@ -419,6 +445,21 @@ class MultiscaleAR(nn.Module):
                 ll = torch.where(inputs > 0, nonzeros.log(), zeros.log())
                 ll = ll.sum(dim=[1, 2])
                 self.gamma = torch.tensor([0.])
+
+            elif self.type == 'masked exponential':
+                gamma_i, log_lambda_i = self.ARinner(inputs[:, :self.window_area], mode='direct')
+                inner_mean = inputs[:, :self.window_area]
+                gamma_o, log_lambda_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean,
+                                                        mode='direct')
+                gamma = torch.cat([gamma_i, gamma_o], -1)
+                log_lambda = torch.cat([log_lambda_i, log_lambda_o], -1).clamp(min=np.log(1e-3), max=np.log(1e3))
+
+                self.gamma = gamma
+                ll = torch.where(inputs > 0,
+                                 (1 - gamma + 1e-10).log() + log_lambda - log_lambda.exp()*inputs,
+                                 (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+
+
             return ll
 
         # sampling

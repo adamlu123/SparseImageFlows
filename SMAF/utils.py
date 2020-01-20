@@ -63,8 +63,8 @@ def save_images(epoch, best_model, cond):
 def load_data_LAGAN(subset='signal'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
-        image = np.asarray(f['image'][:])
-        real_labels = np.asarray(f['signal'][:])  # 10000
+        image = np.asarray(f['image'][:10000])
+        real_labels = np.asarray(f['signal'][:10000])  # 10000
     real_imagebg = image[real_labels == 0]
     real_imagesg = image[real_labels == 1]
     print(real_imagebg.shape, real_imagesg.shape)
@@ -117,7 +117,7 @@ def gamma_log_prob(concentration, rate, value):
 
 
 def normal_log_prob(mu, log_std, value):
-    return np.log(1/np.sqrt(2*np.pi)) - log_std - (mu-value)**2/((2*log_std.exp())**2)
+    return np.log(1/np.sqrt(2*np.pi)) - log_std - (mu-value)**2/(2*(log_std.exp())**2)
     #.clamp(min=-10, max=10)
 
 
@@ -233,11 +233,11 @@ def sigmoid(x):
 
 
 def erf_approx(value):
-    return 2 * sigmoid(2.5 * value) - 1
+    return 2 * torch.sigmoid(2.5 * value) - 1
 
 
 def standard_normal_cdf(value):
-    return 0.5 * (1 + erf_approx(value / np.sqrt(2))).clamp(min=0, max=1)
+    return 0.5 * (1 + erf_approx(value / np.sqrt(2))).clamp(min=0.001, max=0.999)
 
 
 def trucated_normal_log_prob(mu, sd, value):
@@ -250,10 +250,15 @@ def trucated_normal_log_prob(mu, sd, value):
 
 def trucated_normal_log_prob_stable(mu, log_std, value):
     sd = log_std.exp()
-    log_phi = -np.log(np.sqrt(2 * np.pi)) - (value - mu) ** 2 / (2 * sd ** 2)
-    log_denominator = log_std + (1 - standard_normal_cdf(-mu / sd) + 1e-1).log()
-    return log_phi - log_denominator
+    log_phi = -np.log(np.sqrt(2 * np.pi)) - log_std - (value - mu) ** 2 / (2 * sd ** 2)
+    log_denominator = (1 - standard_normal_cdf(-mu / sd)).log()
+    return log_phi - log_denominator, log_phi, log_denominator
 
+# def trucated_normal_log_prob_stable(mu, log_var, value):
+#     sd = (0.5*log_var).exp()
+#     log_phi = -np.log(np.sqrt(2 * np.pi)) - 0.5*log_var - (value - mu) ** 2 / (2 * log_var.exp())
+#     log_denominator = (1 - standard_normal_cdf(-mu / sd)).log()
+#     return log_phi - log_denominator, log_phi, log_denominator
 
 # def truncated_normal_sample(mu, sigma, num_samples):
 #     epsilon = np.random.uniform(0, 1, num_samples)
@@ -264,9 +269,9 @@ def trucated_normal_log_prob_stable(mu, log_std, value):
 
 
 def truncated_normal_sample(mu, sigma, num_samples):
-    epsilon = Uniform(torch.tensor([0.0]), torch.tensor([1.0])).sample(torch.Size([num_samples])).squeeze()
-    standard_norm = Normal(torch.tensor([0.0]), torch.tensor([1.0]))
-    phi_a_bar = standard_norm.cdf(-mu/sigma)
+    epsilon = Uniform(torch.tensor([0.0]), torch.tensor([1.0])).sample(torch.Size([num_samples])).squeeze().cuda()
+    standard_norm = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
+    phi_a_bar = standard_norm.cdf(-mu/sigma).clamp(max=0.999)
     u = (1-phi_a_bar) * epsilon + phi_a_bar
     x_bar = standard_norm.icdf(u)
     return sigma * x_bar + mu
