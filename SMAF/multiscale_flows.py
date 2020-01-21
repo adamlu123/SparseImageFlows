@@ -261,6 +261,7 @@ class ARBase(nn.Module):
                 return gamma, pred
             elif self.type == 'masked truncated normal' or self.type == 'masked reshaped normal':
                 gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                mu = F.relu(mu)
                 gamma = torch.sigmoid(gamma)
                 return gamma, mu, log_std
             elif self.type == 'logistic':
@@ -318,10 +319,11 @@ class ARBase(nn.Module):
 
                     elif self.type == 'masked reshaped normal':
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                        mu = F.relu(mu)
                         gamma = torch.sigmoid(gamma[:, i])
                         z = Bernoulli(probs=gamma).sample()
-                        if i == 563:
-                            print(i, inputs.shape[0], mu.mean(), log_std.mean())
+                        # if i == 563:
+                        #     print(i, inputs.shape[0], mu.mean(), log_std.mean())
                         nonzeros = utils.truncated_normal_sample(mu=mu[:, i],
                                                                  sigma=log_std[:, i].clamp(min=np.log(1e-3), max=np.log(1e3)).exp(),
                                                                  num_samples=inputs.shape[0])
@@ -362,11 +364,11 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='masked reshaped normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential
+                 type ='softmax + masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
         super(MultiscaleAR, self).__init__()
 
-        self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type, inner=True)
-        self.ARouter = ARBase(num_inputs-window_area, num_hidden[1], window_area, act, num_latent_layer, type)
+        self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type='softmax', inner=True)
+        self.ARouter = ARBase(num_inputs-window_area, num_hidden[1], window_area, act, num_latent_layer, type='masked truncated normal')
         self.window_area = window_area
         self.type = type
 
@@ -459,7 +461,24 @@ class MultiscaleAR(nn.Module):
                                  (1 - gamma + 1e-10).log() + log_lambda - log_lambda.exp()*inputs,
                                  (gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
 
+            elif self.type == 'softmax + masked truncated normal':
+                pred = self.ARinner(inputs[:, :self.window_area], mode='direct')
+                nll_positive = F.cross_entropy(pred.view(-1, 277, self.window_area), inputs[:, :self.window_area].long(),
+                                               reduction="none")  # shape=(batchsize, 625)
+                ll_i = -nll_positive.sum(dim=1)
 
+
+                inner_mean = inputs[:, :self.window_area]
+                gamma, mu, log_std = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean,
+                                                        mode='direct')
+                log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
+                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5 * log_std)) + gamma  # here gamma = p(z=0)
+                self.gamma = gamma
+                ll_o = torch.where(inputs[:, self.window_area:] > 0,
+                                 (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5 * log_std,
+                                                                               value=inputs[:, self.window_area:]),  # -0.05*mu**2
+                                 (1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
+                ll = ll_i + ll_o
             return ll
 
         # sampling

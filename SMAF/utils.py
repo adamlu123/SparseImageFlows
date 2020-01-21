@@ -63,8 +63,8 @@ def save_images(epoch, best_model, cond):
 def load_data_LAGAN(subset='signal'):
     img_dir = "/baldig/physicsprojects/lagan"
     with h5py.File(img_dir+'/lagan-jet-images.hdf5', 'r') as f:
-        image = np.asarray(f['image'][:10000])
-        real_labels = np.asarray(f['signal'][:10000])  # 10000
+        image = np.asarray(f['image'][:])
+        real_labels = np.asarray(f['signal'][:])  # 10000
     real_imagebg = image[real_labels == 0]
     real_imagesg = image[real_labels == 1]
     print(real_imagebg.shape, real_imagesg.shape)
@@ -271,7 +271,7 @@ def trucated_normal_log_prob_stable(mu, log_std, value):
 def truncated_normal_sample(mu, sigma, num_samples):
     epsilon = Uniform(torch.tensor([0.0]), torch.tensor([1.0])).sample(torch.Size([num_samples])).squeeze().cuda()
     standard_norm = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
-    phi_a_bar = standard_norm.cdf(-mu/sigma).clamp(max=0.999)
+    phi_a_bar = standard_norm.cdf(-mu/sigma)
     u = (1-phi_a_bar) * epsilon + phi_a_bar
     x_bar = standard_norm.icdf(u)
     return sigma * x_bar + mu
