@@ -10,6 +10,8 @@ import numpy as np
 import utils
 from utils import load_data_LAGAN, load_jet_image, lagan_disretized_loader
 
+
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -157,7 +159,7 @@ if args.flow == 'mixture-maf':
     print('flow structure: {}'.format(modules))
 
 elif args.flow == 'multiscale AR':
-    window_area = 121
+    window_area = 9
     num_hidden = [window_area*5, (625-window_area)*1]
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
@@ -206,12 +208,7 @@ def train(epoch):
         # loss = -model(data, mode='direct').mean()
         loss = -model.log_probs(data).mean()
         gamma = model._modules['0'].gamma
-        # log_phi, log_denominator = model._modules['0'].ll_trunc_norm, model._modules['0'].log_denominator
-        # log_std = model._modules['0'].log_std
 
-        # mu = model._modules['0'].mu
-        # u = model.u
-        # log_jacob = model.log_jacob
 
         if batch_idx % args.log_interval == 0:
             print('\n gamma min:{}, gamma max:{}, gamma mean:{}'.format(gamma.min(), gamma.max(), gamma.mean()))
@@ -261,14 +258,14 @@ if args.input_permute == 'spiral from center':
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 1 == 0:
+    if epoch % 5 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        samples = model.sample(torch.tensor(train_dataset[:1000, :]).cuda(), input_size=image_size**2)
+        inputs = torch.randn((200, 625)).cuda()  #
+        samples = model.sample(inputs, input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':
-            # print(ind[inverse_ind])
             samples = samples[:, inverse_ind]
             eval_data = eval_data[:, inverse_ind]
 
@@ -281,16 +278,9 @@ for epoch in range(args.epochs):
         with open(args.result_dir + '/distance_list.txt', 'a') as f:
             f.write(str(dist) + ', \n')
 
-        # tau21 = []
-        # for i in range(eval_data.shape[0]):
-        #     tau21.append(plot_utils.tau21(eval_data[i].reshape(25, 25)))
 
-
-
-        if epoch % 10 == 0:
-            # distance = np.asarray(dist_list)
-            # print('min pt:{}, min mass: {}'.format(distance[:, 0].min(), distance[:, 1].min()))
-            # torch.save(model.state_dict(), args.result_dir + '/lagan_reshapenorm_model_{}.pt'.format(epoch))
+        if epoch % 5 == 0:
+            torch.save(model.state_dict(), args.result_dir + '/model_{}.pt'.format(epoch))
 
             with open(args.result_dir + '/background_Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)

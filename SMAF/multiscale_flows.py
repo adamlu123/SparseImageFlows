@@ -364,11 +364,11 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='softmax + masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
+                 type ='softmax'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
         super(MultiscaleAR, self).__init__()
 
-        self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type='softmax', inner=True)
-        self.ARouter = ARBase(num_inputs-window_area, num_hidden[1], window_area, act, num_latent_layer, type='masked truncated normal')
+        self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type=type, inner=True)
+        self.ARouter = ARBase(num_inputs-window_area, num_hidden[1], window_area, act, num_latent_layer, type=type)
         self.window_area = window_area
         self.type = type
 
