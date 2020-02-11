@@ -1,16 +1,14 @@
+import sys
+# import os
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
 import argparse
 import copy
 import math
-import sys
-import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
 import pickle as pkl
 import time
 import numpy as np
 import utils
-from utils import load_data_LAGAN, load_jet_image, lagan_disretized_loader
-
-
+from utils import load_data_LAGAN, lagan_disretized_loader
 
 import torch
 import torch.nn as nn
@@ -111,7 +109,7 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
-kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
+kwargs = {'num_workers': 16, 'pin_memory': True} if args.cuda else {}
 
 
 if args.jet_images == True:
@@ -175,6 +173,8 @@ for module in model.modules():
             # module.bias.data.fill_(0)
 
 model = model.cuda()
+model = nn.DataParallel(model)
+
 if torch.cuda.device_count() > 1:
     print("Let's use", torch.cuda.device_count(), "GPUs!")
     # model = nn.DataParallel(model)
@@ -206,8 +206,8 @@ def train(epoch):
         data = data.cuda().float()
         optimizer.zero_grad()
         # loss = -model(data, mode='direct').mean()
-        loss = -model.log_probs(data).mean()
-        gamma = model._modules['0'].gamma
+        loss = -model.module.log_probs(data).mean()
+        gamma = model.module._modules['0'].gamma
 
 
         if batch_idx % args.log_interval == 0:
@@ -258,19 +258,19 @@ if args.input_permute == 'spiral from center':
 for epoch in range(args.epochs):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
-    if epoch % 5 == 0:
+    if epoch % 1 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        inputs = torch.randn((200, 625)).cuda()  #
-        samples = model.sample(inputs, input_size=image_size**2)
+        inputs = torch.tensor(train_dataset[:500, :]).cuda() #  torch.randn((200, 625)).cuda()
+        samples = model.module.sample(inputs, input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':
             samples = samples[:, inverse_ind]
             eval_data = eval_data[:, inverse_ind]
 
         duration = time.time() - start
-        print('end sampling, duration:{}'.format(duration))
+        print('end sampling, duration:{}, max {}'.format(duration, samples.max()))
         print(samples.shape)
         #
         dist = get_distance(eval_data.reshape(-1, image_size, image_size),

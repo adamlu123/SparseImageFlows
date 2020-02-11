@@ -309,11 +309,13 @@ class ARBase(nn.Module):
                         gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                         log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                         gamma = torch.sigmoid(gamma[:, i])
-                        # p = gamma/(1-utils.get_psi(mu[:, i], torch.exp(0.5 * log_std[:, i])))#(1-gamma) / (1-utils.get_psi(mu[:, i], torch.exp(0.5 * log_std[:, i])))
-                        # gamma = (1 - gamma) * utils.get_psi(mu[:, i], torch.exp(0.5 * log_std[:, i])) + gamma
                         z = Bernoulli(probs=gamma).sample()
+                        # below zero to noise
                         nonzeros = noise[:, i] * torch.exp(0.5*log_std[:, i]) + mu[:, i]
-                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
+                        unif_noise = Uniform(torch.zeros_like(nonzeros), torch.ones_like(nonzeros)).sample()
+                        nonzeros = torch.where(nonzeros>0, nonzeros, unif_noise)
+                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))  #.clamp(min=0)
+
                         if i == 0 and self.inner:
                             x[:, i] = inputs[:, i]
 
@@ -364,7 +366,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='softmax'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
+                 type ='masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type=type, inner=True)
@@ -411,7 +413,7 @@ class MultiscaleAR(nn.Module):
                 log_std = torch.cat([log_std_i, log_std_o], -1)
 
                 log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
-                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
+                # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
                                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5*log_std, value=inputs), # -0.05*mu**2
