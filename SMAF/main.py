@@ -116,7 +116,7 @@ if args.jet_images == True:
     print('start to load data')
     # train_dataset = lagan_disretized_loader(subset='signal')
     # train_dataset = train_dataset.reshape(-1, 625)
-    train_dataset = load_data_LAGAN(subset='background')
+    train_dataset = load_data_LAGAN(subset='signal')
     train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 
@@ -262,7 +262,7 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        inputs = torch.tensor(train_dataset[:500, :]).cuda() #  torch.randn((200, 625)).cuda()
+        inputs = torch.tensor(train_dataset[:200, :]).cuda() #  torch.randn((200, 625)).cuda()
         samples = model.module.sample(inputs, input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':

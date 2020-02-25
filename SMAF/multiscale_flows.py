@@ -1,22 +1,18 @@
 # By Yadong Lu, Dec 2019
 
-import math
-import types
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Gamma, Bernoulli, Uniform
 import utils
-import plot_utils
 from torch.distributions.exponential import Exponential
 
-inverse_ind = np.loadtxt('inverse_ind.txt')
-image_size = 25
-grid = 0.5 * (np.linspace(-1.25, 1.25, image_size+1)[:-1] + np.linspace(-1.25, 1.25, image_size+1)[1:])
-eta = torch.tensor(np.tile(grid, (image_size, 1)), dtype=torch.float32).cuda()
-phi = torch.tensor(np.tile(grid[::-1].reshape(-1, 1), (1, image_size)), dtype=torch.float32).cuda()
+# inverse_ind = np.loadtxt('inverse_ind.txt')
+# image_size = 25
+# grid = 0.5 * (np.linspace(-1.25, 1.25, image_size+1)[:-1] + np.linspace(-1.25, 1.25, image_size+1)[1:])
+# eta = torch.tensor(np.tile(grid, (image_size, 1)), dtype=torch.float32).cuda()
+# phi = torch.tensor(np.tile(grid[::-1].reshape(-1, 1), (1, image_size)), dtype=torch.float32).cuda()
 
 def discrete_mass(jet_image):
     '''
@@ -279,78 +275,81 @@ class ARBase(nn.Module):
 
         # sampling
         else:
-            x = torch.zeros_like(inputs).float()
-            noise = torch.Tensor(inputs.size()).normal_().cuda()
+            # x = torch.zeros_like(inputs).float()
+            noise = inputs  #torch.Tensor(inputs.size()).normal_().cuda()
+            x = inputs
             with torch.no_grad():
                 for i in range(input_dim):
-                    h = self.joiner(x.view(-1, input_dim), cond_inputs)
-                    if self.type == 'softmax':
-                        theta = self.trunk(h)
-                        out = self.conv1d(theta.view(-1, self.softmax_latent, input_dim))
-                        probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
-                        nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
-                        x[:, i] = nonzeros
+                    if i == 0 and self.inner:
+                        x[:, i] = inputs[:, i]
+                    else:
+                        h = self.joiner(x.view(-1, input_dim), cond_inputs)
+                        if self.type == 'softmax':
+                            theta = self.trunk(h)
+                            out = self.conv1d(theta.view(-1, self.softmax_latent, input_dim))
+                            probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
+                            nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
+                            x[:, i] = nonzeros
 
-                    elif self.type == 'masked softmax':
-                        h = self.trunk(h)
-                        gamma, theta = h[:, :input_dim], h[:, input_dim:].reshape(-1, self.softmax_latent, input_dim)
-                        # gamma, theta = self.trunk(h).chunk(2, 1)
-                        # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
-                        gamma = torch.sigmoid(gamma[:, i])
-                        z = Bernoulli(probs=gamma).sample()
-                        out = self.conv1d(theta.view(-1, self.softmax_latent, input_dim))
-                        probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
-                        nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
-                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                        if i == 0 and self.inner:
-                            x[:, i] = inputs[:, i]
+                        elif self.type == 'masked softmax':
+                            h = self.trunk(h)
+                            gamma, theta = h[:, :input_dim], h[:, input_dim:].reshape(-1, self.softmax_latent, input_dim)
+                            # gamma, theta = self.trunk(h).chunk(2, 1)
+                            # gamma = self.conv1d_gamma(gamma.view(-1, 1, input_dim)).squeeze()
+                            gamma = torch.sigmoid(gamma[:, i])
+                            z = Bernoulli(probs=gamma).sample()
+                            out = self.conv1d(theta.view(-1, self.softmax_latent, input_dim))
+                            probs = F.softmax(out[:, :, i], dim=1)  # shape=(batchsize, 277)
+                            nonzeros = torch.multinomial(probs, 1).view(-1)  # shape=(batchsize)
+                            x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
 
-                    elif self.type == 'masked truncated normal':
-                        gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-                        log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
-                        gamma = torch.sigmoid(gamma[:, i])
-                        z = Bernoulli(probs=gamma).sample()
-                        # below zero to noise
-                        nonzeros = noise[:, i] * torch.exp(0.5*log_std[:, i]) + mu[:, i]
-                        unif_noise = Uniform(torch.zeros_like(nonzeros), torch.ones_like(nonzeros)).sample()
-                        nonzeros = torch.where(nonzeros>0, nonzeros, unif_noise)
-                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))  #.clamp(min=0)
 
-                        if i == 0 and self.inner:
-                            x[:, i] = inputs[:, i]
+                        elif self.type == 'masked truncated normal':
+                            gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                            log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
+                            gamma = torch.sigmoid(gamma[:, i])
+                            z = Bernoulli(probs=gamma).sample()
+                            # below zero to noise
+                            nonzeros = noise[:, i] * torch.exp(0.5*log_std[:, i]) + mu[:, i]
+                            # unif_noise = Uniform(torch.zeros_like(nonzeros), torch.ones_like(nonzeros)).sample()
+                            # nonzeros = torch.where(nonzeros>0, nonzeros, unif_noise)
+                            x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
 
-                    elif self.type == 'masked reshaped normal':
-                        gamma, mu, log_std = self.trunk(h).chunk(3, 1)
-                        mu = F.relu(mu)
-                        gamma = torch.sigmoid(gamma[:, i])
-                        z = Bernoulli(probs=gamma).sample()
-                        # if i == 563:
-                        #     print(i, inputs.shape[0], mu.mean(), log_std.mean())
-                        nonzeros = utils.truncated_normal_sample(mu=mu[:, i],
-                                                                 sigma=log_std[:, i].clamp(min=np.log(1e-3), max=np.log(1e3)).exp(),
-                                                                 num_samples=inputs.shape[0])
-                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                        if i == 0 and inputs.shape[1] == 225:
-                            x[:, i] = inputs[:, i]
+                            if i == 0 and self.inner:
+                                x[:, i] = inputs[:, i]
 
-                    elif self.type == 'logistic':
-                        pi, mu, log_s = self.trunk(h).chunk(3, 1)
-                        pi = self.conv1d_pi(pi.view(-1, 1, input_dim)).clamp(min=1e-5)   # shape=(batch, 10, 1)
-                        mu = self.conv1d_mu(mu.view(-1, 1, input_dim))
-                        log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim)).clamp(min=np.log(1e-2), max=np.log(1e2))
-                        pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
-                        x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
-                        if i == 0 and self.inner:
-                            x[:, i] = inputs[:, i]
+                        elif self.type == 'masked reshaped normal':
+                            gamma, mu, log_std = self.trunk(h).chunk(3, 1)
+                            mu = F.relu(mu)
+                            gamma = torch.sigmoid(gamma[:, i])
+                            z = Bernoulli(probs=gamma).sample()
+                            # if i == 563:
+                            #     print(i, inputs.shape[0], mu.mean(), log_std.mean())
+                            nonzeros = utils.truncated_normal_sample(mu=mu[:, i],
+                                                                     sigma=log_std[:, i].clamp(min=np.log(1e-3), max=np.log(1e3)).exp(),
+                                                                     num_samples=inputs.shape[0])
+                            x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+                            if i == 0 and inputs.shape[1] == 225:
+                                x[:, i] = inputs[:, i]
 
-                    elif self.type == 'masked exponential':
-                        gamma, log_lambda = self.trunk(h).chunk(2, 1)
-                        gamma = torch.sigmoid(gamma[:, i])
-                        z = Bernoulli(probs=gamma).sample()
-                        nonzeros = Exponential(rate=log_lambda[:, i].exp().clamp(min=np.log(1e-2), max=np.log(1e2))).sample()
-                        x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                        if i == 0 and self.inner:
-                            x[:, i] = inputs[:, i]
+                        elif self.type == 'logistic':
+                            pi, mu, log_s = self.trunk(h).chunk(3, 1)
+                            pi = self.conv1d_pi(pi.view(-1, 1, input_dim)).clamp(min=1e-5)   # shape=(batch, 10, 1)
+                            mu = self.conv1d_mu(mu.view(-1, 1, input_dim))
+                            log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim)).clamp(min=np.log(1e-2), max=np.log(1e2))
+                            pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
+                            x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
+                            if i == 0 and self.inner:
+                                x[:, i] = inputs[:, i]
+
+                        elif self.type == 'masked exponential':
+                            gamma, log_lambda = self.trunk(h).chunk(2, 1)
+                            gamma = torch.sigmoid(gamma[:, i])
+                            z = Bernoulli(probs=gamma).sample()
+                            nonzeros = Exponential(rate=log_lambda[:, i].exp().clamp(min=np.log(1e-2), max=np.log(1e2))).sample()
+                            x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
+                            if i == 0 and self.inner:
+                                x[:, i] = inputs[:, i]
 
             # x = torch.floor(x+0.5)
             return x
@@ -366,7 +365,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
+                 type ='softmax'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type=type, inner=True)
@@ -413,7 +412,7 @@ class MultiscaleAR(nn.Module):
                 log_std = torch.cat([log_std_i, log_std_o], -1)
 
                 log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
-                # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
+                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
                                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5*log_std, value=inputs), # -0.05*mu**2

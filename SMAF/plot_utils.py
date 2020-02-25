@@ -52,7 +52,6 @@ def dphi(phi1, phi2):
     '''
     return math.acos(math.cos(abs(phi1 - phi2)))
 
-
 def _tau1(jet_image):
     '''
     Calculates the normalized tau1 from a pixelated jet image
@@ -66,9 +65,10 @@ def _tau1(jet_image):
     # find coordinate of most energetic pixel, then use formula to compute tau1
     tau1_axis_eta = eta.ravel()[np.argmax(jet_image)]
     tau1_axis_phi = phi.ravel()[np.argmax(jet_image)]
-    tau1 = np.sum(jet_image *
-            np.sqrt(np.square(tau1_axis_eta - eta) + np.square([dphi(tau1_axis_phi, p) for p in phi.ravel()]).reshape(25, 25)) )
-    return tau1 / np.sum(jet_image)  # normalize by the total intensity
+    tau1 = np.sum(jet_image * 
+            np.sqrt(np.square(tau1_axis_eta - eta) + np.square([dphi(tau1_axis_phi, p) for p in phi.ravel()]).reshape(25, 25))
+                 ) 
+    return tau1 / np.sum(jet_image) # normalize by the total intensity
 
 
 def _tau2(jet_image):
@@ -84,11 +84,12 @@ def _tau2(jet_image):
     ------
         slow implementation
     '''
-    proto = zip(jet_image[jet_image != 0],
-                         eta[jet_image != 0],
-                         phi[jet_image != 0])
-    proto_temp = copy.deepcopy(proto)
-    while len(list(proto_temp)) > 2:
+    mask = jet_image!=0
+    mask = mask[0, :,:]
+    proto = np.array(list(zip(jet_image[jet_image != 0],
+                         eta[mask],#eta[jet_image != 0],
+                         phi[mask])))
+    while len(proto) > 2:
         candidates = [
             (
                 (i, j),
@@ -119,7 +120,6 @@ def _tau2(jet_image):
         proto[pix1] = (pt_add, eta_add, phi_add)
 
         proto = np.delete(proto, pix2, axis=0).tolist()
-        proto_temp = proto
 
     (_, eta1, phi1), (_, eta2, phi2) = proto
     np.sqrt(np.square(eta - eta1) + np.square(phi - phi1))
@@ -131,6 +131,8 @@ def _tau2(jet_image):
 
     return np.sum(jet_image * grid) / np.sum(jet_image) # normalize by the total intensity
 
+     
+    
 def tau21(jet_image):
     '''
     Calculates the tau21 from a pixelated jet image using the functions above
@@ -150,3 +152,4 @@ def tau21(jet_image):
     else:
         tau2 = _tau2(jet_image)
         return tau2 / tau1
+    
