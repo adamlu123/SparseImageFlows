@@ -1,0 +1,208 @@
+import sys
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+import argparse
+import copy
+import math
+import pickle as pkl
+import time
+import numpy as np
+import utils
+from utils import load_data_LAGAN, lagan_disretized_loader
+import h5py
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torch.utils.data
+from torch.utils.data import DataLoader, Dataset
+
+import numpy as np
+from sklearn import metrics
+
+
+from tqdm import tqdm
+
+# load -> assign label -> mix
+
+# def permute(data, label):
+#     ind = np.random.permutation(data.shape[0])
+#     return data[ind], label[ind]
+
+
+def get_auc(pred, label):
+    pred, label = pred.cpu().numpy(), label.cpu().numpy()
+    auc = metrics.roc_auc_score(label, pred)
+    return auc
+
+
+
+def get_acc(pred, label):
+    pred_class = torch.where(pred > 0.5, torch.ones_like(pred), torch.zeros_like(pred))
+    acc = (pred_class.squeeze() == label).sum().float() / label.shape[0]
+    return acc
+
+
+def flip_label(label, portion):
+    n = label.shape[0]
+    ind = np.random.choice(n, int(n*portion), replace=False)
+    label[ind] = 1 - label[ind]
+    return label
+
+
+def prepare_data(dataset, device='cuda'):
+    result_dir = '/baldig/physicsprojects/lagan'
+    assert dataset in ['sarm', 'lagan', 'truth', 'truth-train', 'sarm-reshapenorm']
+
+    if dataset == 'sarm':
+        with h5py.File(result_dir + '/sg_softmax.h5', 'r') as f:
+            sg = np.asarray(f['sg'][:, :, :])
+        with h5py.File(result_dir + '/bg_softmax.h5', 'r') as f:
+            bg = np.asarray(f['bg'][:, :, :])
+
+
+    elif dataset == 'lagan':
+        sg = np.load(result_dir + '/lagan_generated_data_400K/lagan_generated_signal.npy')
+        bg = np.load(result_dir + '/lagan_generated_data_400K/lagan_generated_bg.npy')
+
+    elif dataset == 'truth':
+        with h5py.File(result_dir + '/lagan-jet-images_tiny.h5', 'r') as f:
+            sg = np.asarray(f['sg'][:, :, :])
+            bg = np.asarray(f['bg'][:, :, :])
+
+    elif dataset == 'truth-train':
+        with h5py.File(result_dir + '/lagan-jet-images_train.h5', 'r') as f:
+            sg = np.asarray(f['sg'][:, :, :])
+            bg = np.asarray(f['bg'][:, :, :])
+
+    elif dataset == 'sarm-reshapenorm':
+        with h5py.File(result_dir + '/sparse_arm_generated_combined.h5', 'r') as f:
+            sg = np.asarray(f['sg'][:, :, :])
+            bg = np.asarray(f['bg'][:, :, :])
+
+
+    n = bg.shape[0]
+    label = torch.tensor(np.concatenate([np.zeros(n), np.ones(n)]), dtype=torch.float).to(device)
+    # label = flip_label(label, portion=0.1)
+    data = torch.tensor(np.concatenate([bg, sg], axis=0), dtype=torch.float).to(device)
+    ind = np.random.permutation(2*n)
+    print('load from dataset {}, sg shape {}, bg shape {}'.format(dataset, sg.shape, bg.shape))
+    return data[ind], label[ind]
+
+
+
+
+class ClassficationNet(nn.Module):
+    def __init__(self, input_dim):
+        super(ClassficationNet, self).__init__()
+        hidden_channel = 5
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=hidden_channel, kernel_size=3, stride=1)
+        self.conv2 = nn.Conv2d(in_channels=hidden_channel, out_channels=hidden_channel, kernel_size=3, stride=1)
+        self.conv3 = nn.Conv2d(in_channels=hidden_channel, out_channels=1, kernel_size=3, stride=1)
+        self.linear = nn.Linear(361, 1)
+
+    def forward(self, x):
+        x = x.view(-1, 1, 25, 25)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.view(x.shape[0], -1)
+        x = self.linear(x)
+        return torch.sigmoid(x).squeeze()
+
+
+def train(epoch, model, optimizer, train_loader, true_data, true_label, config):
+    model.train()
+
+    # forward pass
+    for batch_idx, (data, label) in enumerate(train_loader):
+        data, label = data.to(config['device']), label.to(config['device'])
+        optimizer.zero_grad()
+
+        pred = model(data)
+        acc = get_acc(pred, label)
+
+        # loss
+        criterion = torch.nn.BCELoss(reduction='sum')
+        loss = criterion(pred, label)
+        loss.backward()
+        optimizer.step()
+
+        # print
+        if batch_idx % 500 == 0:
+            with torch.no_grad():
+                pred_test = model(true_data)
+                acc_test = get_acc(pred_test, true_label)
+                test_auc = get_auc(pred_test, true_label)
+                print('epoch {}, loss {} acc {}, test acc {}, test auc {}'.format(epoch, loss, acc, acc_test, test_auc))
+
+
+def test(model, data, label):
+    model.eval()
+
+    pred = model(data)
+    acc = get_acc(pred, label)
+    return acc
+
+
+class MyDataset(Dataset):
+    def __init__(self, data, label):
+        self.data = data
+        self.label = label
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        data_val = self.data[index]
+        label = self.label[index]
+        return data_val, label
+
+
+def main(config):
+
+    data, label = prepare_data(config['training data'], device='cpu')
+    true_data, true_label = prepare_data('truth', device=config['device'])
+
+    data, label = data, label
+    train_set = MyDataset(data, label)
+    train_loader = torch.utils.data.DataLoader(
+        train_set, batch_size=config['batch_size'], shuffle=True)
+
+    # true_data, true_label = true_data, true_label
+
+
+    # define model
+    model = ClassficationNet(input_dim=data.shape[0]).to(config['device'])
+    optimizer = optim.Adam(model.parameters(), lr=config['lr'])
+    print(model.parameters)
+
+
+    # start training
+    for epoch in range(config['epochs'] + 1):
+        train(epoch, model, optimizer, train_loader, true_data, true_label, config)
+        test(model, true_data, true_label)
+
+    torch.save(model.state_dict(), config['save_dir'] + '/ep{}_trainset{}_lr{}_batch{}.pt'.format(config['epochs'],
+                                                                                  config['training data'],
+                                                                                       config['lr'],
+                                                                                               config['batch_size']))
+
+
+
+
+
+
+if __name__ == "__main__":
+    config = {'device': 'cuda',
+              'lr': 0.001,
+              'epochs': 5,
+              'batch_size': 64,
+              'training data': 'sarm-reshapenorm', #lagan truth sarm, sarm-reshapenorm
+              'save_dir': '/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/classifer/saved'}
+
+    main(config)
+
+
+
