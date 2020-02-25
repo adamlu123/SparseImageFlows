@@ -276,11 +276,12 @@ class ARBase(nn.Module):
         # sampling
         else:
             # x = torch.zeros_like(inputs).float()
-            noise = inputs  #torch.Tensor(inputs.size()).normal_().cuda()
+            noise = torch.Tensor(inputs.size()).normal_().cuda()
             x = inputs
+            use_empirical = True
             with torch.no_grad():
                 for i in range(input_dim):
-                    if i == 0 and self.inner:
+                    if i == 0 and self.inner and use_empirical:
                         x[:, i] = inputs[:, i]
                     else:
                         h = self.joiner(x.view(-1, input_dim), cond_inputs)
@@ -315,8 +316,8 @@ class ARBase(nn.Module):
                             # nonzeros = torch.where(nonzeros>0, nonzeros, unif_noise)
                             x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
 
-                            if i == 0 and self.inner:
-                                x[:, i] = inputs[:, i]
+                            # if i == 0 and self.inner:
+                            #     x[:, i] = inputs[:, i]
 
                         elif self.type == 'masked reshaped normal':
                             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
@@ -329,8 +330,8 @@ class ARBase(nn.Module):
                                                                      sigma=log_std[:, i].clamp(min=np.log(1e-3), max=np.log(1e3)).exp(),
                                                                      num_samples=inputs.shape[0])
                             x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                            if i == 0 and inputs.shape[1] == 225:
-                                x[:, i] = inputs[:, i]
+                            # if i == 0 and inputs.shape[1] == 225:
+                            #     x[:, i] = inputs[:, i]
 
                         elif self.type == 'logistic':
                             pi, mu, log_s = self.trunk(h).chunk(3, 1)
@@ -339,8 +340,6 @@ class ARBase(nn.Module):
                             log_s = self.conv1d_sd(log_s.view(-1, 1, input_dim)).clamp(min=np.log(1e-2), max=np.log(1e2))
                             pi, mu, log_s = pi[:, :, i], mu[:, :, i], log_s[:, :, i]
                             x[:, i] = (sample_onehot(pi) * sample_logistic(mu, log_s)).sum(dim=1)  # shape=(batch, 1)
-                            if i == 0 and self.inner:
-                                x[:, i] = inputs[:, i]
 
                         elif self.type == 'masked exponential':
                             gamma, log_lambda = self.trunk(h).chunk(2, 1)
@@ -348,8 +347,6 @@ class ARBase(nn.Module):
                             z = Bernoulli(probs=gamma).sample()
                             nonzeros = Exponential(rate=log_lambda[:, i].exp().clamp(min=np.log(1e-2), max=np.log(1e2))).sample()
                             x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                            if i == 0 and self.inner:
-                                x[:, i] = inputs[:, i]
 
             # x = torch.floor(x+0.5)
             return x
@@ -365,7 +362,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='softmax'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
+                 type ='masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type=type, inner=True)
