@@ -19,6 +19,7 @@ import torch.utils.data
 from torch.utils.data import DataLoader, Dataset
 
 import numpy as np
+
 from sklearn import metrics
 
 
@@ -52,6 +53,7 @@ def flip_label(label, portion):
 
 
 def prepare_data(dataset, device='cuda'):
+    np.random.seed(seed=123)
     result_dir = '/baldig/physicsprojects/lagan'
     assert dataset in ['sarm', 'lagan', 'truth', 'truth-train', 'sarm-reshapenorm']
 
@@ -88,6 +90,7 @@ def prepare_data(dataset, device='cuda'):
     data = torch.tensor(np.concatenate([bg, sg], axis=0), dtype=torch.float).to(device)
     ind = np.random.permutation(2*n)
     print('load from dataset {}, sg shape {}, bg shape {}'.format(dataset, sg.shape, bg.shape))
+    # return data, label
     return data[ind], label[ind]
 
 
@@ -209,8 +212,8 @@ if __name__ == "__main__":
     config = {'device': 'cuda',
               'lr': 0.001, # 0.0001
               'epochs': 5, # 1
-              'batch_size': 256,
-              'training data': 'sarm', #lagan truth sarm, sarm-reshapenorm, truth-train
+              'batch_size': 128,
+              'training data': 'truth-train',  #lagan truth sarm, sarm-reshapenorm, truth-train
               'save_dir': '/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/classifer/saved'}
 
     main(config)
