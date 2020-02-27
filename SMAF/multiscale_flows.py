@@ -275,9 +275,8 @@ class ARBase(nn.Module):
 
         # sampling
         else:
-            # x = torch.zeros_like(inputs).float()
+            x = torch.zeros_like(inputs).float()
             noise = torch.Tensor(inputs.size()).normal_().cuda()
-            x = inputs
             use_empirical = True
             with torch.no_grad():
                 for i in range(input_dim):
@@ -309,12 +308,15 @@ class ARBase(nn.Module):
                             gamma, mu, log_std = self.trunk(h).chunk(3, 1)
                             log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                             gamma = torch.sigmoid(gamma[:, i])
+                            # gamma = (gamma / (1 - utils.get_psi(mu[:, i], torch.exp(0.5 * log_std[:, i])))).clamp(max=0.999)
                             z = Bernoulli(probs=gamma).sample()
                             # below zero to noise
                             nonzeros = noise[:, i] * torch.exp(0.5*log_std[:, i]) + mu[:, i]
                             # unif_noise = Uniform(torch.zeros_like(nonzeros), torch.ones_like(nonzeros)).sample()
                             # nonzeros = torch.where(nonzeros>0, nonzeros, unif_noise)
                             x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros)).clamp(min=0)
+                            # sparsity = (x[:, i]>0).float().mean()
+                            # sparsity_true = (inputs[:, i]>0).float().mean()
 
                             # if i == 0 and self.inner:
                             #     x[:, i] = inputs[:, i]
@@ -409,7 +411,8 @@ class MultiscaleAR(nn.Module):
                 log_std = torch.cat([log_std_i, log_std_o], -1)
 
                 log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
-                gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
+                # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
+                gamma = (gamma / (1 - utils.get_psi(mu, torch.exp(0.5*log_std)))).clamp(max=0.999)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
                                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5*log_std, value=inputs), # -0.05*mu**2

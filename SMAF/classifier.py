@@ -77,7 +77,7 @@ def prepare_data(dataset, device='cuda'):
             bg = np.asarray(f['bg'][:, :, :])
 
     elif dataset == 'sarm-reshapenorm':
-        with h5py.File(result_dir + '/sparse_arm_generated_combined.h5', 'r') as f:
+        with h5py.File(result_dir + '/sparse_arm_generated_combined_v2.h5', 'r') as f:
             sg = np.asarray(f['sg'][:, :, :])
             bg = np.asarray(f['bg'][:, :, :])
 
@@ -96,19 +96,27 @@ def prepare_data(dataset, device='cuda'):
 class ClassficationNet(nn.Module):
     def __init__(self, input_dim):
         super(ClassficationNet, self).__init__()
-        hidden_channel = 5
+        hidden_channel = 30
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=hidden_channel, kernel_size=3, stride=1)
         self.conv2 = nn.Conv2d(in_channels=hidden_channel, out_channels=hidden_channel, kernel_size=3, stride=1)
-        self.conv3 = nn.Conv2d(in_channels=hidden_channel, out_channels=1, kernel_size=3, stride=1)
-        self.linear = nn.Linear(361, 1)
+        self.maxpool1 = nn.MaxPool2d(kernel_size=3, stride=1)
+        self.conv3 = nn.Conv2d(in_channels=hidden_channel, out_channels=hidden_channel, kernel_size=3, stride=1)
+        self.conv4 = nn.Conv2d(in_channels=hidden_channel, out_channels=1, kernel_size=3, stride=1)
+        self.maxpool2 = nn.MaxPool2d(kernel_size=3, stride=1)
+        self.linear1 = nn.Linear(169, 100)
+        self.linear2 = nn.Linear(100, 1)
 
     def forward(self, x):
         x = x.view(-1, 1, 25, 25)
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
+        x = self.maxpool1(x)
         x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = self.maxpool2(x)
         x = x.view(x.shape[0], -1)
-        x = self.linear(x)
+        x = self.linear1(x)
+        x = self.linear2(x)
         return torch.sigmoid(x).squeeze()
 
 
@@ -140,10 +148,10 @@ def train(epoch, model, optimizer, train_loader, true_data, true_label, config):
 
 def test(model, data, label):
     model.eval()
-
-    pred = model(data)
-    acc = get_acc(pred, label)
-    return acc
+    with torch.no_grad():
+        pred = model(data)
+        acc = get_acc(pred, label)
+    return pred.cpu().detach().numpy()
 
 
 class MyDataset(Dataset):
@@ -182,7 +190,10 @@ def main(config):
     # start training
     for epoch in range(config['epochs'] + 1):
         train(epoch, model, optimizer, train_loader, true_data, true_label, config)
-        test(model, true_data, true_label)
+    pred = test(model, true_data, true_label)
+
+    with open(config['save_dir'] + '/pred_{}.pkl'.format(config['training data']), 'wb') as f:
+        pkl.dump(pred, f)
 
     torch.save(model.state_dict(), config['save_dir'] + '/ep{}_trainset{}_lr{}_batch{}.pt'.format(config['epochs'],
                                                                                   config['training data'],
@@ -196,10 +207,10 @@ def main(config):
 
 if __name__ == "__main__":
     config = {'device': 'cuda',
-              'lr': 0.001,
-              'epochs': 5,
-              'batch_size': 64,
-              'training data': 'sarm-reshapenorm', #lagan truth sarm, sarm-reshapenorm
+              'lr': 0.001, # 0.0001
+              'epochs': 5, # 1
+              'batch_size': 256,
+              'training data': 'sarm', #lagan truth sarm, sarm-reshapenorm, truth-train
               'save_dir': '/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/classifer/saved'}
 
     main(config)
