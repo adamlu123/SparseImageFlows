@@ -24,8 +24,6 @@ from scipy.stats import wasserstein_distance
 import plot_utils
 
 
-
-
 parser = argparse.ArgumentParser(description='Sparse Auto-regressive Flows')
 parser.add_argument(
     '--batch-size',
@@ -111,12 +109,11 @@ if args.cuda:
 
 kwargs = {'num_workers': 16, 'pin_memory': True} if args.cuda else {}
 
-
 if args.jet_images == True:
     print('start to load data')
     # train_dataset = lagan_disretized_loader(subset='signal')
     # train_dataset = train_dataset.reshape(-1, 625)
-    train_dataset = load_data_LAGAN(subset='signal')
+    train_dataset = load_data_LAGAN(subset='background')
     train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 
@@ -131,7 +128,7 @@ if args.jet_images == True:
 
 
 train_loader = torch.utils.data.DataLoader(
-    train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
+    train_dataset[:400000], batch_size=args.batch_size, shuffle=True, **kwargs)
 
 
 
@@ -261,7 +258,7 @@ for epoch in range(args.epochs):
         model.eval()
         print('start sampling')
         start = time.time()
-        inputs = torch.tensor(train_dataset[:200, :]).cuda() #  torch.randn((200, 625)).cuda()
+        inputs = torch.tensor(train_dataset[400000:400500, :]).cuda() #  torch.randn((200, 625)).cuda()
         samples = model.module.sample(inputs, input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
         if args.input_permute == 'spiral from center':

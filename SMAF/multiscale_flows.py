@@ -137,7 +137,7 @@ def create_joiner_trunk(num_inputs, num_hidden, num_cond_inputs, act_func, num_l
     if type == 'masked softmax':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * (1+softmax_latent), output_mask))
     elif type == 'masked truncated normal' or type == 'masked reshaped normal':
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, output_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, hidden_mask))  # TODO output_mask
     elif type == 'softmax':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * softmax_latent, output_mask))
     elif type == 'logistic':
@@ -364,7 +364,7 @@ class MultiscaleAR(nn.Module):
                  num_hidden,
                  act='relu',
                  num_latent_layer=2,
-                 type ='masked truncated normal'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
+                 type ='softmax'):  # logistic, masked softmax, masked truncated normal, softmax, masked reshaped normal, masked exponential, mixed
         super(MultiscaleAR, self).__init__()
 
         self.ARinner = ARBase(window_area, num_hidden[0], None, act, num_latent_layer, type=type, inner=True)

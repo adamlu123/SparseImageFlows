@@ -1,6 +1,6 @@
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import argparse
 import copy
 import math
@@ -53,9 +53,9 @@ def flip_label(label, portion):
 
 
 def prepare_data(dataset, device='cuda'):
-    np.random.seed(seed=123)
+
     result_dir = '/baldig/physicsprojects/lagan'
-    assert dataset in ['sarm', 'lagan', 'truth', 'truth-train', 'sarm-reshapenorm']
+    assert dataset in ['sarm', 'lagan', 'truth', 'truth-train', 'sarm-reshapenorm', 'augument_sarm-reshapenorm']
 
     if dataset == 'sarm':
         with h5py.File(result_dir + '/sg_softmax.h5', 'r') as f:
@@ -83,11 +83,32 @@ def prepare_data(dataset, device='cuda'):
             sg = np.asarray(f['sg'][:, :, :])
             bg = np.asarray(f['bg'][:, :, :])
 
+    elif dataset == 'augument_sarm-reshapenorm':
+        with h5py.File(result_dir + '/sparse_arm_generated_combined_v2.h5', 'r') as f:
+            sg = np.asarray(f['sg'][:, :, :])
+            bg = np.asarray(f['bg'][:, :, :])
+        with h5py.File(result_dir + '/lagan-jet-images_train.h5', 'r') as f:
+            sg = np.concatenate([np.asarray(f['sg'][:, :, :]),sg], axis=0)
+            bg = np.concatenate([np.asarray(f['bg'][:, :, :]),bg], axis=0)
+
+    elif dataset == 'augument_sarm':
+        with h5py.File(result_dir + '/sparse_arm_generated_combined_v2.h5', 'r') as f:
+            sg = np.asarray(f['sg'][:, :, :])
+            bg = np.asarray(f['bg'][:, :, :])
+        with h5py.File(result_dir + '/sg_softmax.h5', 'r') as f:
+            sg = np.concatenate([np.asarray(f['sg'][:, :, :]),sg], axis=0)
+        with h5py.File(result_dir + '/bg_softmax.h5', 'r') as f:
+            bg = np.concatenate([np.asarray(f['bg'][:, :, :]),bg], axis=0)
+
+
+
+
 
     n = bg.shape[0]
     label = torch.tensor(np.concatenate([np.zeros(n), np.ones(n)]), dtype=torch.float).to(device)
     # label = flip_label(label, portion=0.1)
     data = torch.tensor(np.concatenate([bg, sg], axis=0), dtype=torch.float).to(device)
+    np.random.seed(seed=123)
     ind = np.random.permutation(2*n)
     print('load from dataset {}, sg shape {}, bg shape {}'.format(dataset, sg.shape, bg.shape))
     # return data, label
@@ -125,6 +146,7 @@ class ClassficationNet(nn.Module):
 
 def train(epoch, model, optimizer, train_loader, true_data, true_label, config):
     model.train()
+    trainauc_ls, testauc_ls = [], []
 
     # forward pass
     for batch_idx, (data, label) in enumerate(train_loader):
@@ -146,8 +168,18 @@ def train(epoch, model, optimizer, train_loader, true_data, true_label, config):
                 pred_test = model(true_data)
                 acc_test = get_acc(pred_test, true_label)
                 test_auc = get_auc(pred_test, true_label)
-                print('epoch {}, loss {} acc {}, test acc {}, test auc {}'.format(epoch, loss, acc, acc_test, test_auc))
 
+                pred_train = model(train_loader.dataset.data[:true_data.shape[0]].cuda())
+                train_label = train_loader.dataset.label[:true_label.shape[0]].cuda()
+                auc_train = get_auc(pred_train, train_label)
+
+                trainauc_ls.append(auc_train)
+                testauc_ls.append(test_auc)
+
+                print('epoch {}, loss {}, batch acc {}, train auc {}, test acc {}, test auc {}'.format(epoch, loss,
+                                                                                                       acc, auc_train,
+                                                                                                       acc_test, test_auc))
+    return trainauc_ls, testauc_ls
 
 def test(model, data, label):
     model.eval()
@@ -191,29 +223,34 @@ def main(config):
 
 
     # start training
+    trainauc, testauc = [], []
     for epoch in range(config['epochs'] + 1):
-        train(epoch, model, optimizer, train_loader, true_data, true_label, config)
+        trainauc_ls, testauc_ls = train(epoch, model, optimizer, train_loader, true_data, true_label, config)
+        trainauc.extend(trainauc_ls), testauc.extend(testauc_ls)
+
+    with open(config['save_dir'] + '/{}trainauc.pkl'.format(config['training data']), 'wb') as f:
+        pkl.dump(trainauc, f)
+    with open(config['save_dir'] + '/{}testauc.pkl'.format(config['training data']), 'wb') as f:
+        pkl.dump(testauc, f)
+
     pred = test(model, true_data, true_label)
 
-    with open(config['save_dir'] + '/pred_{}.pkl'.format(config['training data']), 'wb') as f:
-        pkl.dump(pred, f)
-
-    torch.save(model.state_dict(), config['save_dir'] + '/ep{}_trainset{}_lr{}_batch{}.pt'.format(config['epochs'],
-                                                                                  config['training data'],
-                                                                                       config['lr'],
-                                                                                               config['batch_size']))
-
-
-
+    # with open(config['save_dir'] + '/pred_{}.pkl'.format(config['training data']), 'wb') as f:
+    #     pkl.dump(pred, f)
+    #
+    # torch.save(model.state_dict(), config['save_dir'] + '/ep{}_trainset{}_lr{}_batch{}.pt'.format(config['epochs'],
+    #                                                                               config['training data'],
+    #                                                                                    config['lr'],
+    #                                                                                            config['batch_size']))
 
 
 
 if __name__ == "__main__":
     config = {'device': 'cuda',
               'lr': 0.001, # 0.0001
-              'epochs': 5, # 1
+              'epochs': 20, # 1
               'batch_size': 128,
-              'training data': 'truth-train',  #lagan truth sarm, sarm-reshapenorm, truth-train
+              'training data': 'sarm',  #lagan truth sarm, sarm-reshapenorm, truth-train, augument_sarm-reshapenorm
               'save_dir': '/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/classifer/saved'}
 
     main(config)
