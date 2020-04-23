@@ -113,7 +113,7 @@ if args.jet_images == True:
     print('start to load data')
     # train_dataset = lagan_disretized_loader(subset='signal')
     # train_dataset = train_dataset.reshape(-1, 625)
-    train_dataset = load_data_LAGAN(subset='background')
+    train_dataset = load_data_LAGAN(subset='signal')
     train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 

@@ -1,6 +1,6 @@
 import sys
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import argparse
 import copy
 import math
@@ -17,6 +17,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
 from torch.utils.data import DataLoader, Dataset
+from torch.distributions import Uniform
 
 import numpy as np
 
@@ -55,14 +56,18 @@ def flip_label(label, portion):
 def prepare_data(dataset, device='cuda'):
 
     result_dir = '/baldig/physicsprojects/lagan'
-    assert dataset in ['sarm', 'lagan', 'truth', 'truth-train', 'sarm-reshapenorm', 'augument_sarm-reshapenorm']
+    assert dataset in ['sarm', 'sarm_round', 'lagan', 'truth', 'truth-train', 'sarm-reshapenorm', 'augument_sarm-reshapenorm']
 
-    if dataset == 'sarm':
+    if dataset == 'sarm_round':
+        with h5py.File(result_dir + '/softmax_round.h5', 'r') as f:
+            sg = np.asarray(f['sg_softmax'][:, :, :])
+            bg = np.asarray(f['bg_softmax'][:, :, :])
+
+    elif dataset == 'sarm':
         with h5py.File(result_dir + '/sg_softmax.h5', 'r') as f:
             sg = np.asarray(f['sg'][:, :, :])
         with h5py.File(result_dir + '/bg_softmax.h5', 'r') as f:
             bg = np.asarray(f['bg'][:, :, :])
-
 
     elif dataset == 'lagan':
         sg = np.load(result_dir + '/lagan_generated_data_400K/lagan_generated_signal.npy')
@@ -144,13 +149,21 @@ class ClassficationNet(nn.Module):
         return torch.sigmoid(x).squeeze()
 
 
+def apply_uniform(data):
+    noise = Uniform(0, 1).sample(data.size()).cuda()
+    data = torch.where(data>0, data+noise, data)
+    return data
+
+
 def train(epoch, model, optimizer, train_loader, true_data, true_label, config):
-    model.train()
+
     trainauc_ls, testauc_ls = [], []
 
     # forward pass
     for batch_idx, (data, label) in enumerate(train_loader):
+        model.train()
         data, label = data.to(config['device']), label.to(config['device'])
+        data = apply_uniform(data)
         optimizer.zero_grad()
 
         pred = model(data)
@@ -164,6 +177,7 @@ def train(epoch, model, optimizer, train_loader, true_data, true_label, config):
 
         # print
         if batch_idx % 500 == 0:
+            model.eval()
             with torch.no_grad():
                 pred_test = model(true_data)
                 acc_test = get_acc(pred_test, true_label)
@@ -207,8 +221,9 @@ def main(config):
 
     data, label = prepare_data(config['training data'], device='cpu')
     true_data, true_label = prepare_data('truth', device=config['device'])
+    # true_data, true_label = true_data.to(config['device']), true_label.to(config['device'])
 
-    data, label = data, label
+    # data, label = data, label
     train_set = MyDataset(data, label)
     train_loader = torch.utils.data.DataLoader(
         train_set, batch_size=config['batch_size'], shuffle=True)
@@ -235,8 +250,8 @@ def main(config):
 
     pred = test(model, true_data, true_label)
 
-    # with open(config['save_dir'] + '/pred_{}.pkl'.format(config['training data']), 'wb') as f:
-    #     pkl.dump(pred, f)
+    with open(config['save_dir'] + '/pred_{}.pkl'.format(config['training data']), 'wb') as f:
+        pkl.dump(pred, f)
     #
     # torch.save(model.state_dict(), config['save_dir'] + '/ep{}_trainset{}_lr{}_batch{}.pt'.format(config['epochs'],
     #                                                                               config['training data'],
@@ -250,7 +265,7 @@ if __name__ == "__main__":
               'lr': 0.001, # 0.0001
               'epochs': 20, # 1
               'batch_size': 128,
-              'training data': 'sarm',  #lagan truth sarm, sarm-reshapenorm, truth-train, augument_sarm-reshapenorm
+              'training data': 'sarm_round',  #lagan truth sarm, sarm-reshapenorm, truth-train, augument_sarm-reshapenorm
               'save_dir': '/extra/yadongl10/BIG_sandbox/SparseImageFlows_result/classifer/saved'}
 
     main(config)

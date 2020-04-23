@@ -137,7 +137,7 @@ def create_joiner_trunk(num_inputs, num_hidden, num_cond_inputs, act_func, num_l
     if type == 'masked softmax':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * (1+softmax_latent), output_mask))
     elif type == 'masked truncated normal' or type == 'masked reshaped normal':
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, hidden_mask))  # TODO output_mask
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 3, output_mask))  # TODO output_mask
     elif type == 'softmax':
         latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * softmax_latent, output_mask))
     elif type == 'logistic':
@@ -396,7 +396,7 @@ class MultiscaleAR(nn.Module):
                 pred_o = self.ARouter(inputs[:, self.window_area:], cond_inputs=inner_mean, mode='direct')
                 pred = torch.cat([pred_i, pred_o], -1)
                 self.gamma = torch.tensor([0.])
-                nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 625)
+                nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.ceil().long(), reduction="none")  # shape=(batchsize, 625)
                 ll = -nll_positive.mean(dim=1)  # - metric_loss(pred, inputs)
 
             elif self.type == 'masked truncated normal':
