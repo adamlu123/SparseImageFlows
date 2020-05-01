@@ -12,5 +12,5 @@ cd /extra/yadongl10/BIG_sandbox/SparseImageFlows/SMAF
 
 echo $PATH
 
-python main.py --lr ${lr} --act ${act} --latent ${latent} --result_dir ${result_fldr}
+python main.py --lr ${lr} --act ${act} --latent ${lpyatent} --result_dir ${result_fldr}
 

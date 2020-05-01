@@ -375,7 +375,7 @@ class FlowSequential(nn.Sequential):
                 elif isinstance(module, MADE):
                     inputs, logdet = module(inputs, cond_inputs, mode)
                     logdets += logdet
-                elif isinstance(module, MixtureDiscreteMADE) or isinstance(module, ConditionalMixtureDiscreteMADE):
+                elif isinstance(module, DiscreteSoftmaxMADE) or isinstance(module, ConditionalMixtureDiscreteMADE):
                     ll = module(inputs, cond_inputs, mode)
                     return ll
             return inputs, logdets, ll
@@ -389,7 +389,7 @@ class FlowSequential(nn.Sequential):
             log_probs = self(inputs)
             return (log_probs).sum(-1, keepdim=True)
         else:
-            _, _, ll = self(inputs)
+            ll = self(inputs)
             self.log_jacob = torch.tensor(0.)
             self.u = torch.tensor(0.)
             # log_probs = (-0.5 * u ** 2 - 0.5 * math.log(2 * math.pi))  #.sum(-1, keepdim=True)
@@ -543,8 +543,8 @@ class MaskedConv2d(nn.Conv2d):
 
 
 
-class MixtureDiscreteMADE(nn.Module):
-    """ An implementation of mxiture of Dirac delta and multinomial: MADE structure
+class DiscreteSoftmaxMADE(nn.Module):
+    """ An implementation of discretized softmax with MADE structure
     (https://arxiv.org/abs/1502.03509s).
     """
     def __init__(self,
@@ -552,15 +552,16 @@ class MixtureDiscreteMADE(nn.Module):
                  num_hidden,
                  num_cond_inputs=None,
                  act='relu',
-                 num_latent_layer=2):
-        super(MixtureDiscreteMADE, self).__init__()
+                 num_latent_layer=2,
+                 softmax_latent=100):
+        super(DiscreteSoftmaxMADE, self).__init__()
 
-        activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh}
+        activations = {'relu': nn.ReLU, 'sigmoid': nn.Sigmoid, 'tanh': nn.Tanh, 'GeLU': utils.GeLU}
         act_func = activations[act]
 
         input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type='input')
         hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
-        output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
+        output_mask = get_mask(num_hidden, num_inputs * softmax_latent, num_inputs, mask_type='output')
 
         self.joiner = nn.MaskedLinear(num_inputs, num_hidden, input_mask,
                                       num_cond_inputs)
@@ -568,60 +569,42 @@ class MixtureDiscreteMADE(nn.Module):
         latent_modules = []
         for i in range(num_latent_layer):
             latent_modules.append(act_func())
-            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden,
-                                                   hidden_mask))
-        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * 2,
-                                                   output_mask))
+            latent_modules.append(nn.MaskedLinear(num_hidden, num_hidden, hidden_mask))
+        latent_modules.append(nn.MaskedLinear(num_hidden, num_inputs * softmax_latent, output_mask))
         self.trunk = nn.Sequential(*latent_modules)
 
         self.conv1d = nn.Sequential(
-            nn.Conv1d(in_channels=1, out_channels=90, stride=1, kernel_size=1), nn.BatchNorm1d(90), nn.ReLU(),
-            nn.Conv1d(in_channels=90, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
-            nn.Conv1d(in_channels=180, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
-            nn.Conv1d(in_channels=180, out_channels=180, stride=1, kernel_size=1), nn.BatchNorm1d(180), nn.ReLU(),
-            nn.Conv1d(in_channels=180, out_channels=277, stride=1, kernel_size=1)
+            nn.Conv1d(in_channels=softmax_latent, out_channels=277, stride=1, kernel_size=1)
         )
-        self.conv1d_gamma = nn.Conv1d(in_channels=1, out_channels=1, stride=1, kernel_size=1)
+        self.softmax_latent = softmax_latent
 
     def forward(self, inputs, cond_inputs=None, mode='direct', epoch=0):
         if mode == 'direct':
             h = self.joiner(inputs, cond_inputs)
-            gamma, theta = self.trunk(h).chunk(2, 1)
-            gamma = self.conv1d_gamma(gamma.view(-1, 1, 625))
-            gamma = torch.sigmoid(gamma)
+            theta = self.trunk(h)
 
-            pred = self.conv1d(theta.view(-1,1,625))
-            # nll_positive = torch.where(inputs > 0,
-            #                            F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none"),
-            #                            torch.zeros_like(inputs))
-            nll_positive = F.cross_entropy(pred.view(-1, 277, 625), inputs.long(), reduction="none")  # shape=(batchsize, 625)
+            pred = self.conv1d(theta.view(-1, self.softmax_latent, 625))
+            ll = -F.cross_entropy(pred.view(-1, 277, 625), inputs.round().long(), reduction="none").sum(dim=-1, keepdim=True)  #shape=(batchsize, 625)
 
-            ll = torch.where(inputs > 0,
-                             0.1*(gamma + 1e-10).log() - nll_positive,
-                             0.1*(1 - gamma + 1e-10).log()).sum(dim=-1, keepdim=True)
-            # ll = -nll_positive
-
-            self.gamma = gamma.detach().cpu().numpy()
+            self.gamma = torch.tensor(0.)
             self.mu = torch.tensor(0.)
             self.log_std = torch.tensor(0.)
-
             return ll
 
         else:
             x = torch.zeros_like(inputs)
             with torch.no_grad():
                 for i in range(625):
-                    h = self.joiner(x.view(-1, 625), cond_inputs)
-                    gamma, theta = self.trunk(h).chunk(2, 1)  #
-                    gamma = self.conv1d_gamma(gamma.view(-1, 1, 625)).squeeze()
-                    gamma = torch.sigmoid(gamma[:, i])
-                    z = Bernoulli(probs=gamma).sample()
+                    if i == 0:
+                        x[:, i] = inputs[:, i]
+                    else:
+                        h = self.joiner(x.view(-1, 625), cond_inputs)
+                        theta = self.trunk(h)
 
-                    out = self.conv1d(theta.view(-1,1,625))
-                    probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
-                    nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
-                    x[:, i] = torch.where(z > 0, nonzeros, torch.zeros_like(nonzeros))
-                    # x[:, i] = nonzeros
+                        out = self.conv1d(theta.view(-1, self.softmax_latent, 625))
+                        probs = F.softmax(out[:, :, i], dim=1).data  # shape=(batchsize, 277)
+                        nonzeros = torch.multinomial(probs, 1).float().view(-1)  # shape=(batchsize)
+                        x[:, i] = nonzeros
             return x
 
 

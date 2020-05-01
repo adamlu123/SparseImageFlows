@@ -1,28 +1,25 @@
 import sys
-# import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
+import os
 import argparse
-import copy
-import math
 import pickle as pkl
 import time
 import numpy as np
-import utils
-from utils import load_data_LAGAN, lagan_disretized_loader
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+# print('training using GPU:', args.GPU)
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
+
+import utils
+from utils import load_data_LAGAN, lagan_disretized_loader
 from tqdm import tqdm
 # from tensorboardX import SummaryWriter
-import datasets
 import mixflows as fnn
 import multiscale_flows as multiscale
 from scipy.stats import wasserstein_distance
 import plot_utils
-
 
 parser = argparse.ArgumentParser(description='Sparse Auto-regressive Flows')
 parser.add_argument(
@@ -89,31 +86,37 @@ parser.add_argument(
     help="number of latent layer in the flow"
     )
 parser.add_argument(
-    "--input_permute", type=str, default='spiral from center',
+    "--input_permute", type=str, default='entropy', # spiral
     help='type of permute: none, spiral from center',
     )
 parser.add_argument(
     '--lr', type=float, default=1e-4, help='learning rate (default: 0.0001)')
 parser.add_argument(
-    '--flow', default='multiscale AR',
+    "--GPU", type=str, default='0', # spiral from center
+    help='GPU id',
+    )
+parser.add_argument(
+    '--flow', default='mixture-maf',
     help='flow to use: mixture-maf, multiscale AR, maf | realnvp | glow')
 
 
 args = parser.parse_args()
+
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device("cuda" if args.cuda else "cpu")
+
 
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
-
 kwargs = {'num_workers': 16, 'pin_memory': True} if args.cuda else {}
 
+
+
+##################################### Dataset #####################################
 if args.jet_images == True:
-    print('start to load data')
-    # train_dataset = lagan_disretized_loader(subset='signal')
-    # train_dataset = train_dataset.reshape(-1, 625)
-    train_dataset = load_data_LAGAN(subset='signal')
+    print('start to load {}'.format(args.subset))
+    train_dataset = load_data_LAGAN(subset=args.subset)
     train_dataset = train_dataset.reshape(-1, 625)
     image_size = 25
 
@@ -121,9 +124,20 @@ if args.jet_images == True:
     # train_dataset = train_dataset.reshape(-1, 1024)
     # image_size = 32
 
-    if args.input_permute == 'spiral from center':
+    if args.input_permute == 'spiral':
         train_dataset, ind = utils.vector_spiral_perm(train_dataset, dim=image_size)
-    print('data_shape', train_dataset.shape)
+        print('data_shape', train_dataset.shape, 'input_permute', 'spiral')
+    elif args.input_permute == 'byrow':
+        print('data_shape', train_dataset.shape, 'input_permute', 'by row')
+    elif args.input_permute == 'random0':
+        train_dataset, ind = utils.vector_random_perm(train_dataset, seed=0, dim=image_size)
+        print('data_shape', train_dataset.shape, 'input_permute', 'random0')
+    elif args.input_permute == 'random1':
+        train_dataset, ind = utils.vector_random_perm(train_dataset, seed=1, dim=image_size)
+        print('data_shape', train_dataset.shape, 'input_permute', 'random1')
+    elif args.input_permute == 'entropy':
+        train_dataset, ind = utils.vector_entropy_perm(train_dataset)
+        print('data_shape', train_dataset.shape, 'input_permute', 'entropy high to low')
     num_cond_inputs = None
 
 
@@ -132,17 +146,17 @@ train_loader = torch.utils.data.DataLoader(
 
 
 
+##################################### Build model #####################################
 num_inputs = train_dataset.shape[1]  # dataset.n_dims
 num_hidden = {
     'MNIST': 1024,
     'JetImages': 1024
 }[args.dataset]
 
-
 modules = []
 assert args.flow in ['multiscale AR', 'mixture-maf', 'maf']
 if args.flow == 'mixture-maf':
-    modules += [fnn.MixtureNormalMADE(num_inputs, num_hidden, num_cond_inputs,
+    modules += [fnn.DiscreteSoftmaxMADE(num_inputs, num_hidden, num_cond_inputs,
                                       act=args.activation, num_latent_layer=args.latent)]
     model = fnn.FlowSequential(*modules)
     # for _ in range(args.num_blocks):
@@ -159,6 +173,7 @@ elif args.flow == 'multiscale AR':
     modules += [multiscale.MultiscaleAR(window_area, num_inputs, num_hidden, act=args.activation, num_latent_layer=args.latent)]
     model = multiscale.FlowSequential(*modules)
     print('model structure: {}'.format(modules))
+
 
 
 for module in model.modules():
@@ -183,7 +198,7 @@ scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100], ga
 global_step = 0
 
 
-
+##################################### Train #####################################
 def train(epoch):
     # global global_step, writer
     model.train()
@@ -240,28 +255,31 @@ def get_distance(image, samples, image_size):
     return [pt_dist, mass_dist]
 
 
+
+##################################### Main #####################################
 best_validation_loss = float('inf')
 best_validation_epoch = 0
 best_model = model
 dist_list = []
 
-if args.input_permute == 'spiral from center':
+if args.input_permute == 'spiral' or 'random' in args.input_permute or 'entropy' in args.input_permute:
     inverse_ind = []
     for i in range(625):
         inverse_ind.append(np.where(ind==i))
     inverse_ind = np.asarray(inverse_ind).squeeze()
 
-for epoch in range(args.epochs):
+for epoch in range(args.epochs+1):
     print('\nEpoch: {}'.format(epoch))
     train(epoch)
     if epoch % 1 == 0:
         model.eval()
         print('start sampling')
         start = time.time()
-        inputs = torch.tensor(train_dataset[400000:400500, :]).cuda() #  torch.randn((200, 625)).cuda()
+        # inputs = torch.tensor(train_dataset[400000:400500, :]).cuda()
+        inputs = torch.tensor(train_dataset[:500, :]).cuda()
         samples = model.module.sample(inputs, input_size=image_size**2)
         eval_data = train_dataset[:samples.shape[0], :]
-        if args.input_permute == 'spiral from center':
+        if args.input_permute == 'spiral' or 'random' in args.input_permute or 'entropy' in args.input_permute:
             samples = samples[:, inverse_ind]
             eval_data = eval_data[:, inverse_ind]
 
@@ -275,10 +293,10 @@ for epoch in range(args.epochs):
             f.write(str(dist) + ', \n')
 
 
-        if epoch % 5 == 0:
+        if epoch % 20 == 0:
             torch.save(model.state_dict(), args.result_dir + '/model_{}.pt'.format(epoch))
 
-            with open(args.result_dir + '/background_Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
+            with open(args.result_dir + '/Mix_discretized_sample_{}.pkl'.format(epoch), 'wb') as f:
                 pkl.dump(samples.tolist(), f)
                 print('generated images saved!')
 

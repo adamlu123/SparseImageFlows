@@ -412,7 +412,7 @@ class MultiscaleAR(nn.Module):
 
                 log_std = log_std.clamp(min=np.log(1e-3), max=np.log(1e3))
                 # gamma = (1 - gamma) * utils.get_psi(mu, torch.exp(0.5*log_std)) + gamma  # here gamma = p(z=0)
-                gamma = (gamma / (1 - utils.get_psi(mu, torch.exp(0.5*log_std)))).clamp(max=0.999)
+                gamma = (gamma * (1 - utils.get_psi(mu, torch.exp(0.5*log_std)))).clamp(max=0.999)
                 self.gamma = gamma
                 ll = torch.where(inputs > 0,
                                  (gamma + 1e-10).log() + utils.normal_log_prob(mu=mu, log_std=0.5*log_std, value=inputs), # -0.05*mu**2

@@ -1,5 +1,4 @@
 import os
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -225,9 +224,41 @@ def vector_spiral_perm(data, dim, start='center'):
         perm_spiral = perm_spiral[::-1]
     return data[:, perm_spiral], np.asarray(perm_spiral)
 
+# random permutation
+def vector_random_perm(data, seed, dim):
+    np.random.seed(seed)
+    perm_random = np.random.permutation(dim**2)
+    return data[:, perm_random], np.asarray(perm_random)
+
+
+# entropy high to low
+def quantize(x, step):
+    return step * np.floor(x / step + 0.5)
+
+
+def get_entropy(image, num_grid):
+    """ get the entropy list for every pixel of a set of images.
+    """
+    quantize_grid = np.linspace(0, 276, num_grid)
+    step = 276 / (num_grid - 1)
+    image = image.reshape(-1, 25 ** 2)
+    image = quantize(image, step)
+
+    prob = np.zeros((625, len(quantize_grid)))
+    for i, point in enumerate(quantize_grid):
+        prob[:, i] = np.sum(image == point, axis=0) / image.shape[0]
+    entropy_matrix = np.where(prob > 0, -prob * np.log2(prob), np.zeros_like(prob))
+    entropy_list = np.sum(entropy_matrix, axis=1)
+    return entropy_list
+
+
+def vector_entropy_perm(data):
+    entropy_list = get_entropy(data, num_grid=277)
+    perm = np.argsort(entropy_list)[::-1]
+    return data[:, perm], perm
+
 
 # reparameterizable truncated normal approximation:
-
 def sigmoid(x):
     return 1/(1+torch.exp(-x))
 
